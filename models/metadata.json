@@ -1,0 +1,33 @@
+{
+  "nc": {
+    "model_file": "models/nc_xgb.pkl",
+    "features_file": "models/nc_features.json",
+    "cv_rmse": 19.9089,
+    "cv_rmse_std": 2.5545,
+    "residuals_normal": false,
+    "best_params": {
+      "n_estimators": 580,
+      "max_depth": 4,
+      "learning_rate": 0.04072782393931439,
+      "subsample": 0.8044150025837739,
+      "colsample_bytree": 0.5932664810664235,
+      "min_child_weight": 3,
+      "reg_alpha": 0.00018456168201538378,
+      "reg_lambda": 0.00030771101004943124
+    }
+  },
+  "c": {
+    "model_file": "models/c_rf.pkl",
+    "features_file": "models/c_features.json",
+    "cv_rmse": 40.416,
+    "cv_rmse_std": 14.6178,
+    "residuals_normal": true,
+    "best_params": {
+      "n_estimators": 214,
+      "max_depth": 5,
+      "min_samples_split": 8,
+      "min_samples_leaf": 2,
+      "max_features": 0.738575054134475
+    }
+  }
+}
