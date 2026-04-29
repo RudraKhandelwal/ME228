@@ -32,13 +32,14 @@
 
 \pagestyle{fancy}
 \fancyhf{}
-\rhead{ME228 Project Report}
+\rhead{ME228 — Applied Data Science and Machine Learning}
 \lhead{Fatigue Strength Prediction in Low-Alloy Steels}
 \rfoot{\thepage}
 
 %% ── Title ───────────────────────────────────────────────────────────────────
 \title{
-  \Large\textbf{ME228 — Project Final Report}\\[6pt]
+  \Large\textbf{ME228 — Applied Data Science and Machine Learning}\\[2pt]
+  \large\textit{Project Final Report}\\[6pt]
   \LARGE Data-Driven Modeling of Fatigue Strength\\in Low-Alloy Steels\\[8pt]
   \large Mixture-of-Experts Prediction, Hyperparameter Optimisation,\\
          Inverse Alloy Design, and Cost Analysis
@@ -93,8 +94,12 @@ failure mechanisms. We engineer a binary flag:
 \[
   \texttt{is\_carburized} = \mathbf{1}[\,CT = 930\,]
 \]
-and train \textbf{separate expert models} per metallurgical regime. This alone reduced RMSE by
+and train \textbf{separate expert models} per metallurgical regime. This reduced RMSE by
 $\sim$30\,\% compared with our initial global baselines (Linear Regression, Ridge, Lasso).
+Note: a tuned global XGBoost achieves a pooled RMSE of 23.1\,MPa versus 23.1\,MPa for the
+MoE pair, so the gain is specific to linear baselines. MoE is retained because it provides
+regime-specific prediction uncertainty ($\sigma$), enabling physically meaningful PoF estimates
+per process route.
 
 \subsection{Feature Selection Pipeline (VIF $\rightarrow$ SHAP)}
 
@@ -437,9 +442,16 @@ All models are loaded from disk at startup via \texttt{joblib} and cached with
   \item \textbf{Carburised data scarcity} ($N=48$) limits prediction reliability
         (CV std = 14.6\,MPa). Acquiring 50--100 additional carburised samples would likely halve
         the uncertainty.
-  \item \textbf{Normality of NC residuals} is borderline. For safety-critical applications, a
-        bootstrap or quantile-regression uncertainty estimate is preferable to
-        $\Phi(\cdot/\text{RMSE})$.
+  \item \textbf{Normality of NC residuals} fails on out-of-fold (OOF) predictions
+        (Shapiro--Wilk $p < 0.001$, KS $p = 0.0002$), producing a Gaussian PoF that differs
+        from the empirical PoF by up to 7 percentage points near the fatigue limit.
+        The v2.0+ code uses an empirical CDF of OOF residuals for NC PoF; Gaussian is retained
+        for the carburised regime (OOF residuals pass normality).
+  \item \textbf{Applicability boundary}: the NIMS dataset consists predominantly of
+        alloyed low-alloy steels (Cr, Mn, Mo, Ni present). External validation against
+        handbook data shows that plain-carbon grades (e.g.\ AISI 1045 normalised) are
+        over-predicted by $\sim$190\,MPa. The model should not be used for steels with
+        Cr\,+\,Ni\,+\,Mo\,$<$\,0.1\,wt\%.
   \item \textbf{Cost model} uses fixed elemental prices. Integration with live LME API data
         would make the recommender directly useful for procurement decisions.
   \item \textbf{Physical constraints} on composition (e.g.\ hardenability rules, weldability

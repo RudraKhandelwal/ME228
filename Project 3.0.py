@@ -17,6 +17,7 @@ import joblib
 import xgboost as xgb
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.neighbors import NearestNeighbors
+from sklearn.model_selection import KFold, cross_val_predict
 from scipy.stats import norm
 from scipy.stats.qmc import LatinHypercube
 
@@ -45,6 +46,21 @@ print("Models loaded from Phase 1.")
 print(f"  NC XGBoost  CV RMSE : {meta['nc']['cv_rmse']:.2f} MPa")
 print(f"  C  RF       CV RMSE : {meta['c']['cv_rmse']:.2f} MPa")
 
+# Pre-compute OOF residuals for NC to build an empirical error CDF.
+# OOF residuals pass through the same fold structure as the reported CV-RMSE,
+# so they represent out-of-sample prediction error honestly.
+# NC OOF residuals fail Gaussian normality (Shapiro+KS p<0.001); empirical CDF
+# is used instead of norm.cdf for NC PoF.  C residuals pass normality → norm.cdf kept.
+_nc_cv = KFold(5, shuffle=True, random_state=42)
+_nc_oof_preds = cross_val_predict(
+    xgb.XGBRegressor(**meta['nc']['best_params'], random_state=42),
+    df_non_carb[nc_feats], df_non_carb['Fatigue'],
+    cv=_nc_cv, n_jobs=-1
+)
+NC_OOF_RESIDUALS = df_non_carb['Fatigue'].values - _nc_oof_preds
+print(f"  NC OOF residuals computed (N={len(NC_OOF_RESIDUALS)}, "
+      f"std={NC_OOF_RESIDUALS.std():.2f} MPa) — used for empirical PoF.")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CELL 2: COST MODEL
@@ -62,6 +78,15 @@ ELEMENT_COST_USD_PER_KG = {
     'P':  0.0,    # impurity — no cost benefit
     'S':  0.0,
 }
+
+# Empirical PoF using pre-computed OOF residuals (used for NC where Gaussian fails).
+# P(fatigue < applied) = P(F_hat + epsilon < applied) = P(epsilon < applied - F_hat)
+def empirical_pof(applied_stress: np.ndarray, pred_fatigue: np.ndarray,
+                  oof_residuals: np.ndarray) -> np.ndarray:
+    gap = applied_stress - pred_fatigue   # shape (n_candidates,)
+    # for each candidate, fraction of OOF residuals below that gap
+    return np.array([(oof_residuals < g).mean() for g in gap])
+
 
 # Carburizing processing cost proxy (USD per unit time in minutes)
 CARB_PROCESS_COST_PER_MIN = 0.05  # relative scale
@@ -124,17 +149,22 @@ def neighborhood_sample_candidates(df_train: pd.DataFrame,
                                    n_samples: int,
                                    noise_scale: float = 0.20,
                                    seed: int = 42) -> pd.DataFrame:
+    # Sample over regime features PLUS every cost-relevant element column so
+    # compute_alloy_cost sees the full composition (not just the regime subset).
+    cost_cols = list(ELEMENT_COST_USD_PER_KG.keys()) + ['Ct']
+    all_cols  = sorted(set(features) | set(c for c in cost_cols if c in df_train.columns))
+
     rng   = np.random.default_rng(seed)
     idx   = rng.integers(0, len(df_train), size=n_samples)
-    base  = df_train[features].values[idx].copy().astype(float)
-    stds  = df_train[features].std().values
+    base  = df_train[all_cols].values[idx].copy().astype(float)
+    stds  = df_train[all_cols].std().values
     noise = rng.normal(0, noise_scale, size=base.shape) * stds
     candidates = base + noise
     # clip to training bounds to avoid extrapolation
-    mins = df_train[features].min().values
-    maxs = df_train[features].max().values
+    mins = df_train[all_cols].min().values
+    maxs = df_train[all_cols].max().values
     candidates = np.clip(candidates, mins, maxs)
-    return pd.DataFrame(candidates, columns=features)
+    return pd.DataFrame(candidates, columns=all_cols)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -175,7 +205,7 @@ def recommend_alloys(
     candidates = neighborhood_sample_candidates(df_trn, feats, n_samples)
 
     # ── 2. kNN hull filter — discard any that drifted outside data region ───
-    in_hull    = in_data_hull(candidates, knn, scaler, thresh)
+    in_hull    = in_data_hull(candidates[feats], knn, scaler, thresh)
     candidates = candidates[in_hull].reset_index(drop=True)
     print(f"[{regime}] {in_hull.sum():,} / {n_samples:,} candidates inside data hull.")
 
@@ -186,11 +216,20 @@ def recommend_alloys(
     # ── 3. Predict fatigue strength ──────────────────────────────────────────
     candidates['pred_fatigue']  = model.predict(candidates[feats])
     candidates['fos']           = candidates['pred_fatigue'] / applied_stress_mpa
-    candidates['pof_pct']       = norm.cdf(
-        applied_stress_mpa,
-        loc=candidates['pred_fatigue'],
-        scale=rmse
-    ) * 100
+    # NC: OOF residuals fail Gaussian normality → use empirical CDF of OOF residuals.
+    # C: OOF residuals pass normality → keep Gaussian norm.cdf.
+    if regime == 'non_carb':
+        candidates['pof_pct'] = empirical_pof(
+            np.full(len(candidates), applied_stress_mpa),
+            candidates['pred_fatigue'].values,
+            NC_OOF_RESIDUALS
+        ) * 100
+    else:
+        candidates['pof_pct'] = norm.cdf(
+            applied_stress_mpa,
+            loc=candidates['pred_fatigue'],
+            scale=rmse
+        ) * 100
 
     # ── 4. Filter by FoS and PoF ─────────────────────────────────────────────
     required_fatigue = target_fos * applied_stress_mpa
