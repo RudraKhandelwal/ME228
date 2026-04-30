@@ -30,15 +30,15 @@
   commentstyle=\color{gray},
 }
 
+\setlength{\headheight}{14.5pt}
 \pagestyle{fancy}
 \fancyhf{}
-\rhead{ME228 — Applied Data Science and Machine Learning}
-\lhead{Fatigue Strength Prediction in Low-Alloy Steels}
+\chead{\small ME228 --- Fatigue Strength Prediction \& Inverse Alloy Design}
 \rfoot{\thepage}
 
 %% ── Title ───────────────────────────────────────────────────────────────────
 \title{
-  \Large\textbf{ME228 — Applied Data Science and Machine Learning}\\[2pt]
+  \Large\textbf{ME228 --- Applied Data Science and Machine Learning}\\[2pt]
   \large\textit{Final Project Report}\\[6pt]
   \LARGE Data-Driven Fatigue Strength Prediction\\
          and Inverse Alloy Design for Low-Alloy Steels\\[8pt]
@@ -122,6 +122,17 @@ $N\,{=}\,48$) cluster between 838 and 1190\,MPa, while non-carburised samples
 ($N\,{=}\,389$) span 225--906\,MPa with a right-skew. This bimodality directly motivates
 the architectural choice in §\ref{sec:arch}.
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{slides_plots/01_bimodality.png}
+\caption{Empirical fatigue-strength distribution for the NIMS dataset ($N=437$). The two
+         modes correspond to physically distinct strengthening mechanisms: through-hardening
+         (NC, blue, $\mu=497$\,MPa) and case-hardening via carburisation (C, red,
+         $\mu\approx1007$\,MPa). The gap between modes is $>$250\,MPa, making a single
+         global model inappropriate.}
+\label{fig:bimodal}
+\end{figure}
+
 \subsection{Applicability Boundary}
 The dataset is overwhelmingly populated by \emph{alloyed} low-alloy steels — non-zero Cr,
 Mn, and frequently Mo or Ni. External validation (§\ref{sec:ext}) shows that predictions
@@ -136,42 +147,12 @@ explicitly restrict the deployed model to the alloyed regime
 
 \begin{figure}[H]
 \centering
-\begin{lstlisting}[basicstyle=\ttfamily\footnotesize]
-            +-------------------------------------------+
-            |   Input: composition + heat-treat (26)    |
-            +---------------------+---------------------+
-                                  |
-                          [CT == 930 C ?]   <-- regime gate
-                          /              \
-                        yes               no
-                        |                  |
-       +----------------v---+   +----------v-----------+
-       | Carburised expert  |   | Non-carburised       |
-       | RandomForest, 10 f |   | XGBoost, 12 features |
-       | CV-RMSE 40.4 MPa   |   | CV-RMSE 19.9 MPa     |
-       +----------------+---+   +----------+-----------+
-                        |                  |
-                        v                  v
-        Predicted fatigue F-hat  +  Uncertainty sigma
-                        |                  |
-                        +----------+-------+
-                                   v
-            PoF:
-              NC -> empirical CDF of OOF residuals
-              C  -> Gaussian Phi((sigma_app - F-hat) / sigma)
-                                   |
-                                   v
-                Forward report (F-hat, FoS, PoF, 95% PI)
-                                   |
-              Inverse loop (recommend_alloys):
-                neighbourhood-sample (full composition)
-                kNN hull guard (p99)
-                feasibility filter (FoS, PoF)
-                cost(C,Si,Mn,Ni,Cr,Cu,Mo,P,S,Ct)
-                Pareto front + top-K cheapest
-\end{lstlisting}
-\caption{Final pipeline. Regime gate routes to the appropriate expert; uncertainty is
-         routed through the appropriate PoF formula (empirical for NC, Gaussian for C).}
+\includegraphics[width=0.85\textwidth]{slides_plots/02_architecture.png}
+\caption{Final pipeline. A hard regime gate ($CT = 930\,^\circ$C) routes each input to the
+         appropriate expert. The NC expert (XGBoost, 12 features, CV-RMSE 19.9\,MPa) uses
+         an empirical OOF CDF for PoF; the C expert (Random Forest, 10 features, CV-RMSE
+         40.4\,MPa) uses a Gaussian PoF. Both experts feed the same forward report and
+         inverse design loop.}
 \label{fig:arch}
 \end{figure}
 
@@ -220,7 +201,17 @@ $\log_1p(F)$; gain was 1.4\,\%, not worth complexity).
 \textbf{C (Random Forest).} With $N\,{=}\,48$, RF's bagging and aggressive depth-limit make
 it strictly more robust than XGBoost's boosting cascade. Tuned RF: 40.4\,MPa.
 
-\subsection{Feature Selection (VIF $\rightarrow$ SHAP)}
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{slides_plots/03_bakeoff.png}
+\caption{Five-fold CV RMSE bake-off across all candidate algorithm families, per regime.
+         Chosen models highlighted in green. NC: tuned XGBoost (19.9\,MPa) leads; MLP
+         variants overfit at $N{=}389$. C: tuned Random Forest (40.4\,MPa) leads; deep
+         MLPs catastrophically overfit at $N{=}48$ (RMSE 148--189\,MPa).}
+\label{fig:bakeoff}
+\end{figure}
+
+\subsection{Feature Selection \texorpdfstring{(VIF $\rightarrow$ SHAP)}{(VIF to SHAP)}}
 The 26 raw features contain heavy collinearity (e.g.\ CT, DT, QmT all encode the same
 thermal cycle). We apply a two-stage reduction:
 \begin{enumerate}[nosep]
@@ -279,7 +270,7 @@ max\_features       & ---                 & 0.74 \\
 
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section{Reliability: Empirical PoF}
+\section{Reliability: Empirical PoF}\label{sec:reliability}
 % ─────────────────────────────────────────────────────────────────────────────
 
 The deployment wrapper maps a prediction to a Probability of Failure under applied stress
@@ -299,17 +290,21 @@ since training-fit residuals are biased optimistically small):
 
 \begin{table}[H]
 \centering
-\caption{Residual normality on OOF predictions vs.\ training fit. The reported v2.0 numbers
-         used training-fit residuals; we corrected this in the final analysis.}
+\caption{Residual normality on OOF predictions vs.\ training fit. v2.0 used training-fit
+         residuals (biased small); corrected to OOF in the final analysis.}
 \label{tab:residuals}
-\begin{tabular}{llrrrr}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{l l r p{3.4cm} r r}
 \toprule
-\textbf{Regime} & \textbf{Residual source} & \textbf{Std (MPa)} & \textbf{Range (MPa)} & \textbf{Shapiro $p$} & \textbf{KS $p$} \\
+\textbf{Regime} & \textbf{Source} & \textbf{Std (MPa)}
+                & \textbf{Range (MPa)} & \textbf{Shapiro $p$} & \textbf{KS $p$} \\
 \midrule
-NC & Training fit     & 6.32   & $-38.1$ to $+29.4$  & 0.0000 & 0.2586 \\
-NC & \textbf{Out-of-fold}      & \textbf{20.07}  & \textbf{$-98.7$ to $+121.3$} & \textbf{0.0000} & \textbf{0.0002} \\
-C  & Training fit     & 29.37  & $-78.0$ to $+60.3$  & 0.2391 & 0.6826 \\
-C  & \textbf{Out-of-fold}      & \textbf{42.68}  & \textbf{$-108.8$ to $+87.6$} & 0.1056 & 0.4029 \\
+NC & Train fit            &  6.32 & $-38.1$ to $+29.4$    & 0.0000 & 0.2586 \\
+NC & \textbf{OOF}         & \textbf{20.07} & \textbf{$-98.7$ to $+121.3$}
+                                                           & \textbf{0.0000} & \textbf{0.0002} \\
+C  & Train fit            & 29.37 & $-78.0$ to $+60.3$    & 0.2391 & 0.6826 \\
+C  & \textbf{OOF}         & \textbf{42.68} & \textbf{$-108.8$ to $+87.6$}
+                                                           & 0.1056 & 0.4029 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -320,6 +315,17 @@ C  & \textbf{Out-of-fold}      & \textbf{42.68}  & \textbf{$-108.8$ to $+87.6$} 
         Gaussian PoF is invalid; we use the empirical CDF.
   \item C OOF residuals pass both tests; Gaussian PoF is valid.
 \end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{slides_plots/04_oof_residuals.png}
+\caption{OOF residual diagnostics. \emph{Top row} (NC): the histogram and Q-Q plot show
+         pronounced heavy tails — Shapiro $p < 10^{-3}$, KS $p = 2\times10^{-4}$; Gaussian
+         PoF is not valid. \emph{Bottom row} (C): residuals are consistent with normality
+         (Shapiro $p = 0.11$, KS $p = 0.40$); Gaussian PoF is retained. This diagnostic
+         directly drives the regime-specific PoF formula choice.}
+\label{fig:oof}
+\end{figure}
 
 \subsection{Empirical PoF Formula (NC)}
 We pre-compute OOF residuals $\{r_i\}_{i=1}^{389}$ at startup. For a candidate with
@@ -337,6 +343,17 @@ asymmetry that $\Phi$ misses.
 $\text{PoF}_{\text{Gaussian}} = 0.6318$ vs.\ $\text{PoF}_{\text{empirical}} = 0.6967$ —
 a 6.5 percentage-point difference. For low-stress, high-margin queries the discrepancy
 collapses to zero.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{slides_plots/05_pof_compare.png}
+\caption{NC Probability of Failure curves for a candidate with $\hat{F}=564.9$\,MPa,
+         $\sigma=20.1$\,MPa. The Gaussian CDF (blue) underestimates PoF in the heavy upper
+         tail: at $\sigma_{\text{app}}=571.6$\,MPa, Gaussian gives 63.1\,\% while the
+         empirical CDF gives 69.7\,\%. The gap is most significant near the fatigue limit
+         and vanishes at large safety margins.}
+\label{fig:pof}
+\end{figure}
 
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -361,6 +378,17 @@ $\delta = 0.20\,\hat{\sigma}_f$ per feature, clipped to per-feature bounds.
 the regime features, so the cost calculation could not see Ni (NC) or Cr/Ni/C (C);
 Ni-bearing alloys were ranked as cheap when they were not. The final sampler unions
 regime features with $\{C, Si, Mn, Ni, Cr, Cu, Mo, P, S, Ct\}$ (§\ref{sec:cost}).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.80\textwidth]{slides_plots/06_cost_bug.png}
+\caption{Cost-model bug: the original sampler omitted Ni for NC and Ni/Cr for C from the
+         candidate vector. The corrected sampler inflates reported NC cost by 74\,\% (from
+         \$6.18 to \$11.35/kg for the buggy top-1), while the C top-1 cost is unaffected
+         once Ni is correctly included. Reported figures in this document use the fixed
+         sampler throughout.}
+\label{fig:costbug}
+\end{figure}
 
 \subsection{kNN Data-Hull Guard}
 Constraint~\eqref{eq:hull} is enforced by a $k$-NN ($k=5$) filter. We standardise the
@@ -389,10 +417,10 @@ The recommender returns:
   \item The top-$K$ cheapest feasible alloys.
 \end{enumerate}
 
-\textbf{Stability.} Across 10 random seeds the top-1 \emph{objective} is highly stable
-(NC: cost \$6.15\,$\pm$\,\$0.25, fatigue 776\,$\pm$\,18\,MPa; C: cost \$17.84\,$\pm$\,\$0.24,
-fatigue 1068\,$\pm$\,17\,MPa) but the \emph{exact composition} varies (top-10 Jaccard 0.31
-NC / 0.42 C). Recommendations should therefore be reported as a band, not a unique recipe.
+\textbf{Stability.} Across 10 random seeds the top-1 \emph{objective} is highly stable —
+NC: cost \$6.15\,$\pm$\,\$0.25, fatigue $776\pm18$\,MPa; C: cost \$17.84\,$\pm$\,\$0.24,
+fatigue $1068\pm17$\,MPa — but the \emph{exact composition} varies (top-10 Jaccard 0.31 NC
+/ 0.42 C). Recommendations should therefore be reported as a band, not a unique recipe.
 
 \subsection{Final Recommendations}
 
@@ -472,16 +500,18 @@ Predicted fatigue vs.\ published rotating-bending fatigue ranges (Shigley, ASM):
 
 \begin{table}[H]
 \centering
-\caption{Predictions on canonical AISI grades using mid-range handbook composition + standard heat-treatment.}
+\caption{Predictions on canonical AISI grades (mid-range handbook composition, standard
+         heat-treatment). Handbook ranges from Shigley / ASM.}
 \label{tab:grades}
-\begin{tabular}{lrlrrl}
+\begin{tabular}{lrcrrl}
 \toprule
-\textbf{Grade}            & \textbf{Pred (MPa)} & \textbf{Regime} & \textbf{Handbook lo} & \textbf{Handbook hi} & \textbf{Status} \\
+\textbf{Grade} & \textbf{Pred (MPa)} & \textbf{Regime}
+               & \textbf{HB lo} & \textbf{HB hi} & \textbf{Status} \\
 \midrule
-AISI 1045 (normalised)    & 527.5 & NC & 260 & 340 & HIGH (+188) \\
-AISI 4140 QT              & 621.6 & NC & 450 & 620 & OK (edge)   \\
-AISI 4340 QT              & 624.6 & NC & 520 & 660 & OK          \\
-AISI 8620 carburised      & 923.0 & C  & 700 & 1000 & OK         \\
+AISI 1045 (norm.)    & 527.5 & NC & 260 & 340  & \textbf{HIGH (+188)} \\
+AISI 4140 QT         & 621.6 & NC & 450 & 620  & OK (edge)            \\
+AISI 4340 QT         & 624.6 & NC & 520 & 660  & OK                   \\
+AISI 8620 carb.      & 923.0 & C  & 700 & 1000 & OK                   \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -489,6 +519,19 @@ AISI 8620 carburised      & 923.0 & C  & 700 & 1000 & OK         \\
 The 1045 case confirms what the cross-dataset test showed: with Cr\,$<$\,0.1\,wt\% the
 model leaves its training distribution and over-predicts. We restrict the deployed
 recommender to alloyed compositions in the GUI.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{slides_plots/09_validation.png}
+\caption{Three-leg external validation. \emph{Left}: stratified 80/20 holdout RMSE — NC
+         holdout (17.6\,MPa) is within CV envelope (19.9\,MPa); C holdout (29.5\,MPa) is
+         below CV estimate (40.4\,MPa), indicating no overfit to fold structure. \emph{Centre}:
+         matbench OOD test — Spearman $\rho=-0.04$ confirms the model does not transfer to
+         maraging steels, quantifying the applicability boundary. \emph{Right}: AISI handbook
+         grades — three of four grades fall within published rotating-bending fatigue ranges;
+         AISI 1045 (plain-carbon) is over-predicted, defining the Cr+Ni+Mo threshold.}
+\label{fig:validation}
+\end{figure}
 
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -517,10 +560,10 @@ $\approx$\,2 seconds) and reused on every query.
 % ─────────────────────────────────────────────────────────────────────────────
 
 This section grounds the empirical pipeline in the statistical-learning theory presented
-in ME228 (Applied Data Science and Machine Learning) — Hoeffding's inequality, the VC dimension and the $N \geq 10\,d_{VC}$
-rule of thumb, bootstrap-based generalisation, the bias--variance trade-off — and
-benchmarks the chosen tree models against the algorithm families taught in the course
-(linear regression, ridge, lasso, perceptron, multi-layer perceptron with SGD/Adam/RMSprop).
+in ME228: Hoeffding's inequality, the VC dimension and the $N \geq 10\,d_{VC}$ rule of
+thumb, bootstrap-based generalisation, and the bias--variance trade-off. It also benchmarks
+the chosen tree models against the algorithm families taught in the course (linear
+regression, ridge, lasso, perceptron, MLP with SGD/Adam/RMSprop).
 
 \subsection{VC Dimension Bookkeeping}
 
@@ -531,23 +574,27 @@ counts ($d=12$ for NC, $d=10$ for C):
 \begin{table}[H]
 \centering
 \caption{Raw VC-dimension bookkeeping. Tree-ensemble bounds are upper bounds; effective
-$d_{VC}$ is much smaller because of bagging averaging (RF) and L1/L2 regularisation
-(XGBoost), but the raw figure is what the course's rule of thumb addresses.}
+$d_{VC}$ is much smaller owing to bagging (RF) and L1/L2 regularisation (XGBoost).}
 \label{tab:vc}
-\begin{tabular}{llrrrl}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{l p{5.5cm} r r r l}
 \toprule
-\textbf{Regime} & \textbf{Hypothesis class} & \textbf{$N$} & \textbf{$d_{VC}$ (raw)} & \textbf{$N/d_{VC}$} & \textbf{Status} \\
+\textbf{Regime} & \textbf{Hypothesis class} & \textbf{$N$}
+                & \textbf{$d_{VC}$} & \textbf{$N/d_{VC}$} & \textbf{Status} \\
 \midrule
-NC & Linear regression                       & 389  & 13     & 29.9   & \checkmark \\
-NC & Ridge ($\alpha=1$)                       & 389  & 13     & 29.9   & \checkmark \\
-NC & MLP, 1$\times$16, weights+biases         & 389  & 225    & 1.7    & low        \\
-NC & Decision tree, depth 4                   & 389  & 208    & 1.9    & low        \\
-NC & XGBoost (chosen): 580 trees, depth 4     & 389  & 9\,280 & 0.04   & raw fail   \\
-C  & Linear regression                        & 48   & 11     & 4.4    & low        \\
-C  & Ridge ($\alpha=1$)                       & 48   & 11     & 4.4    & low        \\
-C  & MLP, 1$\times$8                          & 48   & 97     & 0.5    & raw fail   \\
-C  & Random Forest (chosen): 214 trees, depth 5 & 48 & 6\,848 & 0.01   & raw fail   \\
+NC & Linear regression          & 389 & 13     & 29.9 & \checkmark \\
+NC & Ridge ($\alpha=1$)         & 389 & 13     & 29.9 & \checkmark \\
+NC & MLP $1{\times}16$          & 389 & 225    &  1.7 & low        \\
+NC & Decision tree, depth 4     & 389 & 208    &  1.9 & low        \\
+NC & XGBoost (chosen): 580 trees, depth 4
+                                & 389 & 9\,280 & 0.04 & raw fail*  \\
+C  & Linear regression          &  48 & 11     &  4.4 & low        \\
+C  & Ridge ($\alpha=1$)         &  48 & 11     &  4.4 & low        \\
+C  & MLP $1{\times}8$           &  48 & 97     &  0.5 & raw fail*  \\
+C  & RF (chosen): 214 trees, depth 5
+                                &  48 & 6\,848 & 0.01 & raw fail*  \\
 \bottomrule
+\multicolumn{6}{l}{\footnotesize * raw fail mitigated by bagging / L1+L2 regularisation.}
 \end{tabular}
 \end{table}
 
@@ -592,6 +639,17 @@ The Vapnik--Chervonenkis (uniform) bound, $\varepsilon = L\sqrt{8\,(\log(4/\delt
 d_{VC}\log 2N) / N}$, is loose at the tree-ensemble $d_{VC}$ values
 ($\varepsilon \gg L$) and provides no actionable information. The tighter Hoeffding bound,
 applied per-hypothesis after model selection, is the operative guarantee.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{slides_plots/08_hoeffding.png}
+\caption{Hoeffding 95\,\% generalisation bound vs.\ measured OOF RMSE per regime.
+         NC: bound $\varepsilon=46.9$\,MPa, measured 20.1\,MPa (43\,\% of bound).
+         C: bound $\varepsilon=69.0$\,MPa, measured 42.7\,MPa (62\,\% of bound).
+         Both regimes are safely inside the bound, providing a single-hypothesis
+         guarantee against overfitting on the realised training data.}
+\label{fig:hoeffding}
+\end{figure}
 
 \subsection{Bootstrap Confidence Intervals on RMSE}
 
@@ -675,10 +733,10 @@ Across the bake-off we observe the canonical pattern from the lectures:
   \item \textbf{Low bias, high variance}: deep MLPs and unregularised trees. On $N{=}48$
         the variance dominates: MLP RMSE $\sim$170\,MPa with std $\sim$80\,MPa.
   \item \textbf{Sweet spot}: shallow tree ensembles with bagging (RF) or shrinkage (XGB).
-        Optuna's regularisation choices (\texttt{learning\_rate}\,=\,0.041,
-        \texttt{reg\_alpha,reg\_lambda} $\sim 10^{-4}$) push XGBoost into the same low-bias
-        low-variance regime. The Optuna search is itself a course principle: structural
-        risk minimisation by minimising CV error subject to a hyperparameter prior.
+        Optuna's regularisation choices (\texttt{lr}\,=\,0.041,
+        \texttt{reg\_alpha}/\texttt{reg\_lambda}\,$\sim 10^{-4}$) push XGBoost into the
+        low-bias, low-variance regime. The Optuna search itself embodies structural risk
+        minimisation: minimise CV error subject to a hyperparameter prior.
 \end{itemize}
 
 \subsection{Compliance Summary}
@@ -687,21 +745,21 @@ Across the bake-off we observe the canonical pattern from the lectures:
 \centering
 \caption{ME228 principle compliance.}
 \label{tab:compliance}
-\begin{tabular}{ll}
+\begin{tabular}{p{5.5cm} p{7.5cm}}
 \toprule
 \textbf{Course principle} & \textbf{Where in this work} \\
 \midrule
-Hoeffding inequality (single hypothesis)  & Table~\ref{tab:hoeffding}; OOF RMSE $<\varepsilon$ both regimes \\
-VC inequality / growth function           & Table~\ref{tab:vc}; raw $d_{VC}$ tracked \\
-Rule of thumb $N \geq 10\,d_{VC}$         & Linear: \checkmark NC, low C. Trees: raw fail, mitigated \\
-Cross-validation                          & 5-fold CV throughout; Optuna inner loop \\
-Bootstrap                                 & RMSE CI (Table~\ref{tab:boot}); empirical PoF for NC \\
-Train / val / test discipline             & 5-fold CV + 20\,\% stratified holdout \\
-Gradient-descent variants                 & SGD, Adam, RMSprop MLPs benchmarked \\
-Bias--variance decomposition              & Bake-off pattern (variance dominates on $N=48$) \\
-Regularisation                            & L1+L2 (XGB), bagging (RF), early stopping (Optuna trials) \\
-Overfitting check                         & OOF residual std $\approx$ CV-RMSE (no leak) \\
-Hypothesis-class comparison               & Table~\ref{tab:bench} (course palette vs.\ chosen) \\
+Hoeffding inequality        & Table~\ref{tab:hoeffding}; OOF RMSE $<\varepsilon$ both regimes \\
+VC inequality / growth fn.  & Table~\ref{tab:vc}; raw $d_{VC}$ tracked \\
+$N \geq 10\,d_{VC}$ rule    & Linear: \checkmark NC, low C. Trees: raw fail, mitigated \\
+Cross-validation            & 5-fold CV throughout; Optuna inner loop \\
+Bootstrap                   & RMSE CI (Table~\ref{tab:boot}); empirical PoF for NC \\
+Train/val/test discipline   & 5-fold CV + 20\,\% stratified holdout \\
+Gradient-descent variants   & SGD, Adam, RMSprop MLPs benchmarked \\
+Bias--variance decomp.      & Bake-off pattern (variance dominates on $N=48$) \\
+Regularisation              & L1+L2 (XGB), bagging (RF), early stopping (Optuna) \\
+Overfitting check           & OOF residual std $\approx$ CV-RMSE (no leak) \\
+Hypothesis-class comparison & Table~\ref{tab:bench} (course palette vs.\ chosen) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -836,6 +894,26 @@ python crosscheck.py all       # all eight cross-check steps
 python external_validation.py  # holdout + matbench + handbook
 streamlit run app.py           # interactive GUI
 \end{lstlisting}
+
+\subsection{Training-Fit Residual Diagnostics}
+
+For completeness, Figure~\ref{fig:trainresid} shows residual histograms and Q-Q plots on
+the \emph{training fit} (as distinct from the OOF residuals used for PoF in
+§\ref{sec:reliability}). Training residuals are biased optimistically small ($\sigma_{\rm NC}^{\rm train}=6.3$\,MPa
+vs.\ $\sigma_{\rm NC}^{\rm OOF}=20.1$\,MPa) and should not be used for uncertainty
+quantification; they are included here solely as a sanity check on the fitting step.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{models/residual_diagnostics.png}
+\caption{Training-fit residual diagnostics. \emph{Top row} (NC, XGBoost): Shapiro $p=0.000$,
+         KS $p=0.259$; residuals are narrow (std 6.3\,MPa) due to in-sample interpolation.
+         \emph{Bottom row} (C, RF): Shapiro $p=0.239$, KS $p=0.683$; normality holds
+         at training fit. Compare with Figure~\ref{fig:oof} (OOF residuals) — the NC
+         distribution widens substantially out-of-fold, confirming why OOF residuals
+         are required for calibrated PoF.}
+\label{fig:trainresid}
+\end{figure}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \begin{thebibliography}{9}
