@@ -48,12 +48,12 @@
 ======================================================================
  3. BOOTSTRAP RMSE CONFIDENCE INTERVAL (95%, 2000 resamples)
 ======================================================================
-  [NC]  N=389  RMSE point estimate = 20.07 MPa
-     bootstrap mean = 20.04  std = 1.59
-     95% CI = [17.03, 23.18] MPa  (width = 6.15)
-  [C]  N=48  RMSE point estimate = 42.70 MPa
-     bootstrap mean = 42.54  std = 5.00
-     95% CI = [32.67, 52.53] MPa  (width = 19.86)
+  [NC]  N=389  RMSE point estimate = 19.65 MPa
+     bootstrap mean = 19.62  std = 1.53
+     95% CI = [16.75, 22.66] MPa  (width = 5.91)
+  [C]  N=48  RMSE point estimate = 43.18 MPa
+     bootstrap mean = 43.01  std = 4.81
+     95% CI = [33.53, 52.20] MPa  (width = 18.68)
 
 ======================================================================
  4. COURSE-TAUGHT BASELINES (5-fold CV, current features)
@@ -66,9 +66,9 @@
     MLP (16,) SGD                       ERROR: 
 All the 5 fits failed.
 It is very likely that you
-    XGB tuned (chosen for NC)            RMSE =  20.07 ±  2.56
+    RF tuned (chosen for C)             ERROR: name 'meta' is not defined
+    XGB tuned (chosen for NC)           ERROR: name 'meta' is not defined
     MLP (16,16) Adam                     RMSE =  25.01 ±  3.21
-    RF tuned (chosen for C)              RMSE =  28.44 ±  2.20
     MLP (16,) RMSprop                    RMSE =  28.56 ±  0.93
     RF (100, depth 4)                    RMSE =  30.61 ±  1.96
     MLP (16,) Adam                       RMSE =  30.74 ±  2.45
@@ -82,14 +82,14 @@ It is very likely that you
     MLP (16,) SGD                       ERROR: 
 All the 5 fits failed.
 It is very likely that you
-    RF tuned (chosen for C)              RMSE =  40.42 ± 14.62
+    RF tuned (chosen for C)             ERROR: name 'meta' is not defined
+    XGB tuned (chosen for NC)           ERROR: name 'meta' is not defined
     RF (100, depth 4)                    RMSE =  45.05 ± 11.07
     Lasso alpha=0.5                      RMSE =  53.00 ± 18.89
     Ridge alpha=1                        RMSE =  53.09 ± 18.86
     Ridge alpha=10                       RMSE =  53.57 ± 17.86
     Perceptron SGD                       RMSE =  53.70 ± 18.97
     OLS (linear)                         RMSE =  53.89 ± 18.93
-    XGB tuned (chosen for NC)            RMSE =  55.61 ± 12.98
     MLP (16,16) Adam                     RMSE = 148.09 ± 64.82
     MLP (16,) RMSprop                    RMSE = 169.56 ± 79.47
     MLP (16,) Adam                       RMSE = 189.46 ± 63.85

@@ -157,6 +157,7 @@ def course_baselines():
     df = load()
     nc_feats = json.load(open('models/nc_features.json'))
     c_feats  = json.load(open('models/c_features.json'))
+    meta     = json.load(open('models/metadata.json'))
     cv = KFold(5, shuffle=True, random_state=42)
 
     candidates = {
@@ -184,12 +185,9 @@ def course_baselines():
                                                                    max_iter=2000, random_state=42))]),
         'RF (100, depth 4)':  lambda: RandomForestRegressor(n_estimators=100, max_depth=4, n_jobs=-1, random_state=42),
         'RF tuned (chosen for C)': lambda: RandomForestRegressor(
-            n_estimators=214, max_depth=5, min_samples_split=8,
-            min_samples_leaf=2, max_features=0.74, n_jobs=-1, random_state=42),
+            **meta['c']['best_params'], n_jobs=-1),
         'XGB tuned (chosen for NC)': lambda: xgb.XGBRegressor(
-            n_estimators=580, max_depth=4, learning_rate=0.041,
-            subsample=0.804, colsample_bytree=0.593, min_child_weight=3,
-            reg_alpha=1.8e-4, reg_lambda=3.1e-4, random_state=42),
+            **meta['nc']['best_params']),
     }
 
     for regime, dfr, feats in [

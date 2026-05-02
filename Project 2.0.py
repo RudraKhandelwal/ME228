@@ -19,8 +19,10 @@ import joblib
 import optuna
 import xgboost as xgb
 from statsmodels.stats.outliers_influence import variance_inflation_factor
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import KFold, cross_val_score
+from sklearn.pipeline import Pipeline
 from sklearn.metrics import mean_squared_error, r2_score
 from scipy import stats
 from scipy.stats import norm
@@ -50,76 +52,84 @@ print(f"  Carburized     : {len(df_carb)} samples")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CELL 2: VIF -> SHAP FEATURE SELECTION PIPELINE
+# CELL 2: LEAK-FREE VIF -> SHAP FEATURE SELECTION (fold-aware transformer)
 # ─────────────────────────────────────────────────────────────────────────────
-def vif_then_shap_selection(X_full, y_full, group_name, vif_threshold=10.0, top_n_shap=12):
-    print(f"\n{'='*60}")
-    print(f" FEATURE PIPELINE: {group_name.upper()} ")
-    print(f"{'='*60}")
+# VIF + SHAP both run inside fit() => when wrapped in sklearn Pipeline and
+# evaluated via cross_val_score, the selection sees ONLY the training fold.
+# Test fold y/X never influence which features are kept => no leakage.
+class VIFThenShapSelector(BaseEstimator, TransformerMixin):
+    def __init__(self, vif_threshold=10.0, top_n=12,
+                 scout_n_estimators=150, scout_max_depth=5, random_state=42):
+        self.vif_threshold = vif_threshold
+        self.top_n = top_n
+        self.scout_n_estimators = scout_n_estimators
+        self.scout_max_depth = scout_max_depth
+        self.random_state = random_state
 
-    X_vif_calc = X_full.copy()
-    X_vif_calc['intercept'] = 1.0
+    def _vif_filter(self, X_df):
+        X_calc = X_df.copy()
+        X_calc['__intercept__'] = 1.0
+        while True:
+            cols = list(X_calc.columns)
+            vifs = []
+            for i, col in enumerate(cols):
+                if col == '__intercept__':
+                    continue
+                vifs.append((col, variance_inflation_factor(X_calc.values, i)))
+            if not vifs:
+                break
+            worst_col, worst_vif = max(vifs, key=lambda t: t[1])
+            if worst_vif > self.vif_threshold:
+                X_calc = X_calc.drop(columns=[worst_col])
+            else:
+                break
+        return [c for c in X_calc.columns if c != '__intercept__']
 
-    dropped_by_vif = []
-    while True:
-        vif_data = pd.DataFrame({
-            "feature": X_vif_calc.columns,
-            "VIF": [variance_inflation_factor(X_vif_calc.values, i)
-                    for i in range(X_vif_calc.shape[1])]
-        })
-        vif_data = vif_data[vif_data['feature'] != 'intercept']
-        if vif_data['VIF'].max() > vif_threshold:
-            worst = vif_data.loc[vif_data['VIF'].idxmax(), 'feature']
-            dropped_by_vif.append(worst)
-            X_vif_calc = X_vif_calc.drop(columns=[worst])
-        else:
-            break
+    def fit(self, X, y):
+        X_df = X if hasattr(X, 'columns') else pd.DataFrame(X)
+        survivors = self._vif_filter(X_df)
+        X_vif = X_df[survivors]
+        rf = RandomForestRegressor(
+            n_estimators=self.scout_n_estimators,
+            max_depth=self.scout_max_depth,
+            random_state=self.random_state, n_jobs=-1)
+        rf.fit(X_vif, y)
+        sv = shap.TreeExplainer(rf).shap_values(X_vif)
+        imp = np.abs(sv).mean(axis=0)
+        order = np.argsort(imp)[::-1]
+        self.vif_survivors_ = survivors
+        self.selected_features_ = [survivors[i] for i in order[:self.top_n]]
+        return self
 
-    vif_survivors = [c for c in X_vif_calc.columns if c != 'intercept']
-    print(f"STEP 1 VIF: dropped {len(dropped_by_vif)} collinear features.")
-
-    X_shap = X_full[vif_survivors]
-    rf_scout = RandomForestRegressor(n_estimators=150, max_depth=5, random_state=42, n_jobs=-1)
-    rf_scout.fit(X_shap, y_full)
-    explainer = shap.TreeExplainer(rf_scout)
-    shap_values = explainer.shap_values(X_shap)
-
-    shap_importance = pd.DataFrame({
-        'Feature': X_shap.columns,
-        'SHAP': np.abs(shap_values).mean(axis=0)
-    }).sort_values('SHAP', ascending=False)
-
-    final_features = shap_importance['Feature'].head(top_n_shap).tolist()
-    print(f"STEP 2 SHAP: top {len(final_features)} features: {final_features}")
-    return final_features
+    def transform(self, X):
+        X_df = X if hasattr(X, 'columns') else pd.DataFrame(X)
+        return X_df[self.selected_features_]
 
 
-nc_features = vif_then_shap_selection(
-    df_non_carb[all_features], df_non_carb['Fatigue'], "Non-Carburized", top_n_shap=12
-)
-c_features = vif_then_shap_selection(
-    df_carb[all_features], df_carb['Fatigue'], "Carburized", top_n_shap=10
-)
+def make_pipeline(top_n, downstream):
+    # No joblib Memory cache: __main__-defined transformer can't pickle.
+    # Selector refits per fold per trial; cost is acceptable (~ms-scale SHAP
+    # on the small RF scout). Correctness > speed.
+    return Pipeline(
+        [('sel', VIFThenShapSelector(top_n=top_n)),
+         ('mdl', downstream)])
 
-# Persist feature lists
-with open('models/nc_features.json', 'w') as f:
-    json.dump(nc_features, f)
-with open('models/c_features.json', 'w') as f:
-    json.dump(c_features, f)
+
+# Persist all_features now; per-regime feature lists written after final fit
 with open('models/all_features.json', 'w') as f:
     json.dump(all_features, f)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CELL 3: NESTED CV + OPTUNA HYPERPARAMETER TUNING
+# CELL 3: LEAK-FREE OPTUNA TUNING (selection + model jointly inside CV folds)
 # ─────────────────────────────────────────────────────────────────────────────
-def rmse_cv(model, X, y, cv):
-    scores = cross_val_score(model, X, y, cv=cv,
+def rmse_cv_pipe(pipe, X, y, cv):
+    scores = cross_val_score(pipe, X, y, cv=cv,
                              scoring='neg_root_mean_squared_error', n_jobs=-1)
     return -scores.mean(), scores.std()
 
 
-def tune_xgb(X, y, n_trials=60, n_splits=5):
+def tune_xgb(X, y, top_n, n_trials=60, n_splits=5):
     cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
     def objective(trial):
@@ -134,9 +144,9 @@ def tune_xgb(X, y, n_trials=60, n_splits=5):
             'reg_lambda':    trial.suggest_float('reg_lambda', 1e-4, 10.0, log=True),
             'random_state': 42,
         }
-        model = xgb.XGBRegressor(**params)
-        scores = cross_val_score(model, X, y, cv=cv,
-                                 scoring='neg_root_mean_squared_error', n_jobs=-1)
+        pipe = make_pipeline(top_n, xgb.XGBRegressor(**params))
+        scores = cross_val_score(pipe, X, y, cv=cv,
+                                 scoring='neg_root_mean_squared_error', n_jobs=1)
         return -scores.mean()
 
     study = optuna.create_study(direction='minimize')
@@ -144,7 +154,7 @@ def tune_xgb(X, y, n_trials=60, n_splits=5):
     return study.best_params
 
 
-def tune_rf(X, y, n_trials=60, n_splits=5):
+def tune_rf(X, y, top_n, n_trials=60, n_splits=5):
     cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
     def objective(trial):
@@ -156,9 +166,9 @@ def tune_rf(X, y, n_trials=60, n_splits=5):
             'max_features':    trial.suggest_float('max_features', 0.3, 1.0),
             'random_state': 42,
         }
-        model = RandomForestRegressor(**params, n_jobs=-1)
-        scores = cross_val_score(model, X, y, cv=cv,
-                                 scoring='neg_root_mean_squared_error', n_jobs=-1)
+        pipe = make_pipeline(top_n, RandomForestRegressor(**params, n_jobs=-1))
+        scores = cross_val_score(pipe, X, y, cv=cv,
+                                 scoring='neg_root_mean_squared_error', n_jobs=1)
         return -scores.mean()
 
     study = optuna.create_study(direction='minimize')
@@ -168,42 +178,60 @@ def tune_rf(X, y, n_trials=60, n_splits=5):
 
 # ── Non-Carburized: tune XGBoost (5-fold CV, N~390) ──────────────────────────
 print("\n" + "="*60)
-print(" TUNING: NON-CARBURIZED XGBoost (5-fold CV, 60 trials)")
+print(" TUNING: NON-CARBURIZED XGBoost (leak-free 5-fold CV, 60 trials)")
 print("="*60)
-X_nc = df_non_carb[nc_features]
-y_nc = df_non_carb['Fatigue']
+X_nc_full = df_non_carb[all_features]
+y_nc      = df_non_carb['Fatigue']
+NC_TOP_N  = 12
 
-nc_best_params = tune_xgb(X_nc, y_nc, n_trials=60, n_splits=5)
+nc_best_params = tune_xgb(X_nc_full, y_nc, top_n=NC_TOP_N, n_trials=60, n_splits=5)
 print(f"Best params: {nc_best_params}")
 
-nc_tuned = xgb.XGBRegressor(**nc_best_params, random_state=42)
-nc_cv_rmse, nc_cv_std = rmse_cv(nc_tuned, X_nc, y_nc, KFold(5, shuffle=True, random_state=42))
-print(f"CV RMSE : {nc_cv_rmse:.2f} ± {nc_cv_std:.2f} MPa")
+nc_pipe = make_pipeline(NC_TOP_N, xgb.XGBRegressor(**nc_best_params, random_state=42))
+nc_cv_rmse, nc_cv_std = rmse_cv_pipe(
+    nc_pipe, X_nc_full, y_nc, KFold(5, shuffle=True, random_state=42))
+print(f"Honest CV RMSE : {nc_cv_rmse:.2f} ± {nc_cv_std:.2f} MPa")
 
-# Fit on full non-carb data
-nc_tuned.fit(X_nc, y_nc)
+# Final fit on full non-carb data => extracts deployment feature set
+nc_pipe.fit(X_nc_full, y_nc)
+nc_features = list(nc_pipe.named_steps['sel'].selected_features_)
+nc_tuned    = nc_pipe.named_steps['mdl']
+X_nc        = X_nc_full[nc_features]
 nc_preds_train = nc_tuned.predict(X_nc)
-nc_residuals = y_nc.values - nc_preds_train
+nc_residuals   = y_nc.values - nc_preds_train
+print(f"Final selected features ({len(nc_features)}): {nc_features}")
 
-# ── Carburized: tune RF with LOO-like small CV (carb N~48) ───────────────────
-# Use 5-fold for carb too; LOO is noisy for tree models
+# ── Carburized: tune RF (5-fold CV, N~48) ────────────────────────────────────
 print("\n" + "="*60)
-print(" TUNING: CARBURIZED Random Forest (5-fold CV, 60 trials)")
+print(" TUNING: CARBURIZED Random Forest (leak-free 5-fold CV, 60 trials)")
 print("="*60)
-X_c = df_carb[c_features]   # use REDUCED features, not all 26
-y_c = df_carb['Fatigue']
+X_c_full = df_carb[all_features]
+y_c      = df_carb['Fatigue']
+C_TOP_N  = 10
 
-c_best_params = tune_rf(X_c, y_c, n_trials=60, n_splits=5)
+c_best_params = tune_rf(X_c_full, y_c, top_n=C_TOP_N, n_trials=60, n_splits=5)
 print(f"Best params: {c_best_params}")
 
-c_tuned = RandomForestRegressor(**c_best_params, n_jobs=-1, random_state=42)
-c_cv_rmse, c_cv_std = rmse_cv(c_tuned, X_c, y_c, KFold(5, shuffle=True, random_state=42))
-print(f"CV RMSE : {c_cv_rmse:.2f} ± {c_cv_std:.2f} MPa")
+c_pipe = make_pipeline(C_TOP_N, RandomForestRegressor(**c_best_params, n_jobs=-1, random_state=42))
+c_cv_rmse, c_cv_std = rmse_cv_pipe(
+    c_pipe, X_c_full, y_c, KFold(5, shuffle=True, random_state=42))
+print(f"Honest CV RMSE : {c_cv_rmse:.2f} ± {c_cv_std:.2f} MPa")
 
-# Fit on full carb data
-c_tuned.fit(X_c, y_c)
+# Final fit on full carb data
+c_pipe.fit(X_c_full, y_c)
+c_features = list(c_pipe.named_steps['sel'].selected_features_)
+c_tuned    = c_pipe.named_steps['mdl']
+X_c        = X_c_full[c_features]
 c_preds_train = c_tuned.predict(X_c)
-c_residuals = y_c.values - c_preds_train
+c_residuals   = y_c.values - c_preds_train
+print(f"Final selected features ({len(c_features)}): {c_features}")
+
+# Persist final feature lists (extracted from full-data fit; CV numbers above
+# are honest because per-fold selection was used during evaluation)
+with open('models/nc_features.json', 'w') as f:
+    json.dump(nc_features, f)
+with open('models/c_features.json', 'w') as f:
+    json.dump(c_features, f)
 
 print("\n" + "="*60)
 print(" TUNING SUMMARY (CV RMSE — honest cross-validated)")

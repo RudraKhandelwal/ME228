@@ -111,7 +111,7 @@ def fig_architecture():
         fc='#f0f0f0', ec=GREY, fw='bold')
 
     # gate
-    box(38, 75, 24, 7, 'Regime gate:  CT == 930 °C ?', fc='#fff5d6', ec='#d4a017', fw='bold')
+    box(38, 75, 28, 7, 'Regime gate:  CT == 930 °C ?', fc='#fff5d6', ec='#d4a017', fw='bold')
 
     arrow(50, 88, 50, 82)
 
@@ -123,8 +123,11 @@ def fig_architecture():
 
     arrow(45, 75, 25, 68)
     arrow(55, 75, 75, 68)
-    ax.text(33, 71, 'yes', fontsize=10, color=C_COL, fontweight='bold')
-    ax.text(63, 71, 'no',  fontsize=10, color=NC_COL, fontweight='bold')
+    label_bbox = dict(facecolor='white', edgecolor='none', pad=1.5)
+    ax.text(35, 71.5, 'yes', fontsize=10, color=C_COL, fontweight='bold',
+            ha='center', va='center', bbox=label_bbox)
+    ax.text(65, 71.5, 'no',  fontsize=10, color=NC_COL, fontweight='bold',
+            ha='center', va='center', bbox=label_bbox)
 
     # uncertainty
     box(8,  41, 35, 9, 'Gaussian PoF\n(OOF residuals normal, p>0.1)',
@@ -229,7 +232,7 @@ def fig_bakeoff():
                     fontsize=9, color=GREY, va='bottom',
                     bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor=GREY))
 
-    fig.suptitle('Course-algorithm bake-off — chosen models highlighted in green',
+    fig.suptitle('Course-algorithm benchmark — chosen models highlighted in green',
                  fontsize=13, fontweight='bold', y=1.02)
     plt.tight_layout()
     fp = f'{OUT}/03_bakeoff.png'
@@ -330,10 +333,10 @@ def fig_pof_compare():
     e0 = (r < (a0 - F_hat)).mean() * 100
     ax.axvline(a0, color=GREY, linestyle=':', lw=1.2)
     ax.scatter([a0, a0], [g0, e0], s=60, zorder=5, color=['#1f4e79', '#1d6f3a'], edgecolor='white', linewidth=1.5)
-    ax.annotate(f'Gaussian PoF = {g0:.1f}%', xy=(a0, g0), xytext=(a0+8, g0-12),
+    ax.annotate(f'Gaussian PoF = {g0:.1f}%', xy=(a0, g0), xytext=(a0+20, g0-12),
                 fontsize=10, color=NC_COL, fontweight='bold',
                 arrowprops=dict(arrowstyle='-', color=NC_COL, lw=1))
-    ax.annotate(f'Empirical PoF = {e0:.1f}%', xy=(a0, e0), xytext=(a0+8, e0+8),
+    ax.annotate(f'Empirical PoF = {e0:.1f}%', xy=(a0, e0), xytext=(a0+20, e0+12),
                 fontsize=10, color=ACC_COL, fontweight='bold',
                 arrowprops=dict(arrowstyle='-', color=ACC_COL, lw=1))
     ax.text(a0+1, -8, f'σ_app={a0} MPa', fontsize=9, color=GREY)
