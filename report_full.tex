@@ -1,5 +1,5 @@
-\documentclass[10pt,a4paper]{article} % Dropped to 10pt font
-\usepackage[margin=1.45cm]{geometry}  % Small trim to recover the last fraction of a page
+\documentclass[12pt,a4paper]{article} % Dropped to 10pt font
+\usepackage[margin=2.5cm]{geometry}   % Shaved a full cm off every margin
 %% ── Packages ────────────────────────────────────────────────────────────────
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
@@ -21,10 +21,10 @@
 % ── Spacing compression ──────────────────────────────────────────────────────
 \captionsetup{font=footnotesize,skip=2pt}
 \setlist{nosep,topsep=1pt,partopsep=0pt}
-\titlespacing*{\section}{0pt}{4pt plus 2pt minus 2pt}{1pt plus 1pt}
-\titlespacing*{\subsection}{0pt}{2pt plus 1pt minus 1pt}{1pt plus 1pt}
-\titlespacing*{\paragraph}{0pt}{1.5pt plus 1pt minus 1pt}{0.8em}
-\setlength{\parskip}{1pt}
+\titlespacing*{\section}{0pt}{5pt plus 2pt minus 2pt}{2pt plus 1pt}
+\titlespacing*{\subsection}{0pt}{3pt plus 1pt minus 1pt}{1pt plus 1pt}
+\titlespacing*{\paragraph}{0pt}{2pt plus 1pt minus 1pt}{1em}
+\setlength{\parskip}{1.5pt}
 \setlength{\floatsep}{4pt plus 1pt minus 1pt}
 \setlength{\textfloatsep}{5pt plus 1pt minus 2pt}
 \setlength{\intextsep}{4pt plus 1pt minus 1pt}
@@ -53,22 +53,24 @@
 \rfoot{\thepage}
 
 %% ── Title ───────────────────────────────────────────────────────────────────
-\title{\vspace{-1.2em}
-  \large\textbf{ME228 - Applied Data Science and Machine Learning}
+\title{\vspace{-1em}
+  \large\textbf{ME228 --- Applied Data Science and Machine Learning} --- \textit{Final Project}\\[3pt]
   \Large\textbf{Data-Driven Fatigue Strength Prediction and Inverse Alloy Design}\\[-2pt]
-  \vspace{0.2cm}
+  \vspace{0.5cm}
   \normalsize Mixture-of-Experts Regression with Empirical Reliability \& Cost-Constrained Pareto
-  \vspace{-0.8em}
+  \vspace{-0.5em}
 }
 \author{
-  Rudra Khandelwal (24b2140) \quad Shourya Saxena (24b2222) \\[1pt]
+  Rudra Khandelwal (24b2140) \quad Shourya Saxena (24b2222) \\[2pt]
   Kapidhwaj Soni (24b2214) \quad Nishit Dharamshi (24b2153)
-  \vspace{-0.8em}
+  \vspace{-0.5em}
 }
 
-\date{}
+\date{May 3, 2026}
 \begin{document}
 \maketitle
+\tableofcontents
+\clearpage
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Executive Summary}
@@ -95,10 +97,9 @@ On the NIMS Fatigue Strength Dataset ($N\,{=}\,437$, 26 features):
   \item Carburised regime ($N\,{=}\,48$): 5-fold CV RMSE = $40.06 \pm 13.69$\,MPa
         (leakage-free; feature selection performed per fold).
   \item Held-out 20\,\% test: NC $R^2 = 0.973$, C $R^2 = 0.892$.
-  \item Alloyed-grade handbook validation: 8620 carburised in range; 4340 QT
-        near-exact ($+2$\,MPa, within CV uncertainty); 4140 QT at $+35$\,MPa above
-        the \emph{commercial} range, consistent with pristine lab-specimen predictions;
-        AISI 1045 correctly flagged as out-of-domain (plain-carbon applicability boundary).
+  \item AISI 8620 carburised lands within handbook range; 4340 QT is nearly exact
+        (+2\,MPa), 4140 QT remains slightly high, and AISI 1045 remains the clear
+        plain-carbon boundary case.
 \end{itemize}
 
 
@@ -107,7 +108,19 @@ On the NIMS Fatigue Strength Dataset ($N\,{=}\,437$, 26 features):
 % ─────────────────────────────────────────────────────────────────────────────
 
 \subsection{Engineering Context}
-Two coupled questions drive alloy selection: (1) \emph{Forward} — will this alloy survive the load? (2) \emph{Inverse} — what is the cheapest alloy meeting the safety margin? S--N curves answer (1) only for catalogued grades; (2) requires an interpolating predictive model.
+A materials engineer choosing an alloy for a fatigue-loaded component such as a shaft,
+gear, or spring must answer two coupled questions:
+\begin{enumerate}[nosep]
+  \item \emph{Forward}: will this alloy and heat-treatment survive the design load?
+  \item \emph{Inverse}: what is the cheapest alloy that meets the design load with a
+        stated safety margin?
+\end{enumerate}
+Empirical S--N curves answer the first question only for catalogued grades and standard
+processing routes. The second question is fundamentally a search problem over
+composition and heat-treatment space, and becomes prohibitively expensive if approached
+through exhaustive testing alone. The motivation for this project is therefore not merely
+to predict fatigue strength, but to create a calibrated engineering tool that can support
+material screening, cost-aware trade-offs, and explicit uncertainty-aware decision making.
 
 \subsection{Dataset}
 We use the public NIMS MatNavi Fatigue Dataset~\cite{agrawal2014}: 437 experimental records
@@ -135,7 +148,16 @@ the architectural choice in §\ref{sec:arch}.
 \end{figure}
 
 \subsection{Applicability Boundary}
-The model is restricted to alloyed steels (Cr+Ni+Mo\,$\geq$\,0.1\,wt\%); plain-carbon grades (e.g.\ AISI 1045) are over-predicted (§\ref{sec:ext}).
+The dataset is overwhelmingly populated by alloyed low-alloy steels with non-zero Cr,
+Mn, and often Mo or Ni. External validation (§\ref{sec:ext}) shows that the learned
+mapping does not transfer reliably to plain-carbon grades. We therefore explicitly
+restrict the deployed model to the alloyed regime
+\[
+  \text{Cr} + \text{Ni} + \text{Mo} \ge 0.1~\text{wt\%},
+\]
+and treat violations of this threshold as out-of-scope rather than as a soft warning. That
+boundary is not cosmetic: it follows directly from the training distribution and is
+confirmed by both handbook checks and the OOD matbench probe.
 
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -158,7 +180,13 @@ We engineer a binary gate
 \]
 and route to two independent experts.
 
-\textbf{Note.} A tuned global XGBoost lands in the same pooled-RMSE ballpark ($\sim$23\,MPa) as the MoE. The MoE wins on \emph{regime-specific calibration}: each expert has its own residual distribution and $\sigma$, essential for trustworthy PoF.
+\textbf{Note.} A tuned global XGBoost lands in the same pooled-RMSE ballpark
+($\sim$23\,MPa) as the MoE pair. The gain from the split is therefore not simply point
+accuracy. It is calibration. The carburised and non-carburised populations exhibit
+different target ranges, different residual shapes, and different physically meaningful
+uncertainty scales. A single pooled model can obscure those differences even when its
+overall RMSE looks competitive. The MoE architecture preserves them explicitly, which is
+why it is the right foundation for calibrated Probability of Failure reporting.
 
 \subsection{Per-regime Model Choice}
 We benchmark four candidate model families on the regime-specific features under
@@ -181,22 +209,24 @@ kNN ($k=7$)      & 72.02 ± 8.14 & 72.25 ± 7.07 \\
 \end{tabular}
 \end{table}
 
-\noindent
-\begin{minipage}[c]{0.36\textwidth}
 \textbf{NC (XGBoost).} Tuned XGBoost reaches 19.2\,MPa, the lowest CV-RMSE in the
-benchmark. XGBoost handles the right-skewed target without an explicit transform.
+benchmark. In the larger non-carburised branch, boosting has enough data to exploit
+non-linear interactions between chemistry and treatment variables without becoming
+unstable. It also handles the right-skewed target effectively without an explicit response
+transform.
 
-\smallskip
 \textbf{C (Random Forest).} With $N\,{=}\,48$, RF's bagging and aggressive depth-limit make
-it strictly more robust than XGBoost's boosting cascade. Tuned RF: 40.1\,MPa.
-\end{minipage}
-\hfill
-\begin{minipage}[c]{0.61\textwidth}
+it strictly more robust than XGBoost's boosting cascade. In the carburised branch, the
+central problem is variance control rather than expressivity. Bagging, depth limits, and
+leaf regularisation therefore matter more than raw non-linear flexibility. Tuned RF:
+40.1\,MPa.
+
+\begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{slides_plots/03_bakeoff.png}
-\captionof{figure}{5-fold CV RMSE per regime (chosen models in green). NC: XGBoost 19.2\,MPa leads. C: RF 40.1\,MPa leads while MLP variants remain unstable at $N=48$.}
+\includegraphics[width=0.70\textwidth]{slides_plots/03_bakeoff.png}
+\caption{5-fold CV RMSE per regime (chosen models in green). NC: XGBoost 19.2\,MPa leads. C: RF 40.1\,MPa leads while MLP variants remain unstable at $N=48$.}
 \label{fig:benchmark}
-\end{minipage}
+\end{figure}
 
 \subsection{Feature Selection \texorpdfstring{(VIF $\rightarrow$ SHAP)}{(VIF to SHAP)}}
 The 26 raw features contain heavy collinearity (e.g.\ CT, DT, QmT all encode the same
@@ -209,7 +239,15 @@ thermal cycle). We apply a two-stage reduction:
         downstream model; the deployed values are $k=16$ for NC and $k=7$ for C.
 \end{enumerate}
 
-\paragraph{No data leakage.} Both stages are encapsulated in \texttt{VIFThenShapSelector} (a custom \texttt{sklearn} transformer) and composed into a \texttt{Pipeline}. Under \texttt{cross\_val\_score}, VIF and SHAP-scout re-fit on each training fold only; held-out folds never influence feature selection. The CV-RMSEs ($19.19 \pm 2.52$\,MPa NC, $40.06 \pm 13.69$\,MPa C) are leakage-free. Final feature lists are extracted from a full-data fit \emph{after} CV, solely for deployment.
+\paragraph{No data leakage.} Both stages are encapsulated in
+\texttt{VIFThenShapSelector}, a custom \texttt{scikit-learn} transformer, and composed
+with the downstream estimator inside a single \texttt{Pipeline}. When that pipeline is
+evaluated under \texttt{cross\_val\_score}, the VIF filter and the SHAP-scout Random
+Forest are re-fitted on each training fold only; the held-out fold never participates in
+feature selection. The reported CV-RMSE values ($19.19 \pm 2.52$\,MPa for NC and
+$40.06 \pm 13.69$\,MPa for C) are therefore honest leakage-free generalisation
+estimates. The final feature lists below are extracted from a single full-data fit after CV
+has finished, and are used solely for deployment.
 
 \begin{table}[H]
 \centering
@@ -225,10 +263,32 @@ Carburised     & P, RedRatio, Ct, Mo, S, Mn, Cu \\
 \end{tabular}
 \end{table}
 
-\paragraph{Physical interpretation.} NC: TT and Cr dominate, with Ni plus inclusion / quench descriptors (dB, dC, QmT) retained alongside the core chemistry variables. C remains compact: Ct, RedRatio, Mo, and Mn carry the useful case-hardening signal.
+\paragraph{Physical interpretation.} For non-carburised steels, tempering temperature
+(TT) and chromium remain dominant, consistent with martensite tempering and
+hardenability theory, while Ni and the inclusion / quench descriptors (dB, dC, QmT)
+survive because the larger NC sample size supports a slightly richer signal. For
+carburised steels, the selected set is deliberately compact: carburising time (Ct),
+reduction ratio (RedRatio), molybdenum, and manganese capture most of the useful
+variation in case-hardening performance.
 
 \subsection{Hyperparameter Tuning}
-Optuna TPE search, up to 200 trials, with 5-fold CV as the objective and plateau stopping once CV RMSE fails to improve by 0.01\,MPa for 40 trials after at least 60 evaluations. In each trial, Optuna jointly chooses the model hyperparameters and SHAP top-$k$, then scores that candidate by averaging the RMSE over the five held-out folds of the same leak-free \texttt{Pipeline}. This inner CV loop is used only for model selection. Separately, an 80/20 stratified holdout split by fatigue quintile is kept outside the Optuna loop as a final sanity check; after that agreement check, the deployed models and feature lists are obtained from a full-data refit using the selected recipe.
+Optuna TPE search, up to 200 trials, with 5-fold CV as the objective.
+Each Optuna trial jointly chooses the model hyperparameters and the number of SHAP
+features to retain, then evaluates the entire selector-plus-model pipeline under 5-fold CV.
+The objective value is the mean RMSE across the five held-out folds, so Optuna is tuning
+against out-of-fold validation error rather than training error. This inner CV loop is used
+only for model selection. Separately, an 80/20 stratified holdout split by fatigue quintile
+is kept entirely outside Optuna as a final sanity check; once the holdout agrees with the
+CV picture, the deployed experts and their final feature lists are obtained from a refit on
+the full regime data using the selected recipe.
+The search now uses a plateau-based early-stop rule: after at least 60 trials, the study is
+halted once best CV RMSE fails to improve by 0.01\,MPa for 40 consecutive trials. In the
+final deployed runs, this ended the NC and C searches after 124 and 145 trials
+respectively, while still preserving the stronger minima.
+This matters because the value of a hyperparameter setting depends on the feature subset it
+ultimately sees, and conversely the best feature subset depends on the model family and its
+regularisation. Joint tuning therefore avoids the common pitfall of optimising the model on
+a feature space selected under a different criterion.
 
 \begin{table}[H]
 \centering
@@ -253,31 +313,6 @@ max\_features       & ---                 & 0.797 \\
 \end{tabular}
 \end{table}
 
-\subsection{Final Model Performance}\label{sec:perf}
-
-Three distinct error estimates are reported across the pipeline stages:
-
-\begin{enumerate}[nosep]
-  \item \textbf{Optuna CV RMSE} — 5-fold CV score minimised during the search to select hyperparameters. Internal to tuning; the best-trial score approximates stage 2.
-  \item \textbf{Deployed model CV RMSE} — after Optuna completes, a fresh leak-free 5-fold CV is run with the winning recipe on the \emph{full} regime dataset ($N_{\text{NC}}{=}389$, $N_{\text{C}}{=}48$). This is the model that ships; the CV here is its honest generalisation estimate and the $\sigma$ used for PoF (§\ref{sec:reliability}).
-  \item \textbf{Holdout RMSE} — independent 80/20 stratified split kept entirely outside Optuna. A fresh model is trained on the 80\,\% split and evaluated on the unseen 20\,\%, providing an out-of-sample sanity check that the deployed CV is not optimistic.
-\end{enumerate}
-
-\begin{table}[H]
-\centering
-\caption{Performance across all three evaluation stages. Deployed CV is the generalization estimate of the production model (full $N$).}
-\label{tab:perf}
-\begin{tabular}{lrrrr}
-\toprule
-\textbf{Regime} & \textbf{Deployed CV RMSE ($\pm$std)} & \textbf{Holdout RMSE} & \textbf{Holdout $R^2$} & \textbf{Deployed $N$} \\
-\midrule
-NC (XGBoost) & $19.19 \pm 2.52$\,MPa  & 17.93\,MPa & 0.973 & 389 \\
-C (RF)       & $40.06 \pm 13.69$\,MPa & 25.14\,MPa & 0.892 & 48  \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\textbf{Takeaway.} Holdout RMSE is at or below the deployed CV estimate for both regimes — the full-data model generalises at least as well as the 80\,\% sub-model, confirming no overfitting to fold structure.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Reliability: Empirical PoF}\label{sec:reliability}
@@ -289,13 +324,21 @@ $\sigma_{\text{app}}$:
   \text{PoF} = P(F < \sigma_{\text{app}})
 \]
 where $F$ is the realised fatigue strength of a fresh specimen.
+That quantity is the central safety-facing output of the system. A point prediction alone
+is insufficient for engineering use because design decisions depend on where the applied
+stress sits relative to predictive uncertainty. Our reliability layer therefore asks a
+distributional question: given the model and its observed residual behaviour, what is the
+probability that a fresh specimen falls below the requested load?
 
 \subsection{Limitations of the Gaussian Assumption}
 A first-pass approach uses
 $\text{PoF} = \Phi\!\big((\sigma_{\text{app}} - \hat{F}) / \sigma_{\text{CV}}\big)$.
 This is correct only when the residuals $r = F - \hat{F}$ are Gaussian.
 
-\textbf{Test on OOF residuals}: Training-fit residuals are optimistically biased; we test on out-of-fold (OOF) residuals instead.
+\textbf{Test on OOF residuals}: training-fit residuals are optimistically biased and
+artificially narrow because they reflect in-sample interpolation. To validate the Gaussian
+assumption honestly, we must inspect out-of-fold (OOF) residuals generated under the same
+5-fold structure as the reported CV RMSE.
 
 \begin{table}[H]
 \centering
@@ -320,16 +363,15 @@ C  & \textbf{OOF}         & \textbf{42.39} & \textbf{$-112.2$ to $+93.4$}
 
 \textbf{Conclusion.}
 \begin{itemize}[nosep]
-  \item NC OOF residuals fails normality test ($p < 0.001$); skewness $+0.30$
-        (near-symmetric) but excess kurtosis $+7.96$: far heavier tails than Gaussian.
+  \item NC OOF residuals fail \emph{both} normality tests ($p < 0.001$) — heavy right tail.
         Gaussian PoF is invalid; we use the empirical CDF.
-  \item C OOF residuals pass both tests (skewness $-0.48$, excess kurtosis $+0.38$); Gaussian PoF is valid.
+  \item C OOF residuals pass both tests; Gaussian PoF is valid.
 \end{itemize}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.68\textwidth]{slides_plots/04_oof_residuals.png}
-\caption{OOF residual diagnostics. NC (top): near-symmetric but leptokurtic (excess kurtosis $+7.96$, Shapiro $p<10^{-3}$) --- empirical CDF required. C (bottom): near-Gaussian (excess kurtosis $+0.38$, $p=0.38$) --- Gaussian PoF valid.}
+\caption{OOF residual diagnostics. NC (top): heavy tails, Shapiro $p<10^{-3}$ --- empirical CDF required. C (bottom): normal ($p=0.38$) --- Gaussian PoF valid.}
 \label{fig:oof}
 \end{figure}
 
@@ -341,11 +383,18 @@ predicted fatigue $\hat{F}$ at applied stress $\sigma_{\text{app}}$:
     = P(\hat{F} + r < \sigma_{\text{app}})
     = \frac{1}{389}\sum_{i=1}^{389}\mathbf{1}\!\left[r_i < \sigma_{\text{app}} - \hat{F}\right].
 \]
-This is the empirical CDF of residuals evaluated at the gap. It captures the leptokurtic tails (excess kurtosis $+7.96$) that $\Phi$ systematically underestimates.
+This is the empirical CDF of residuals evaluated at the gap. It captures heavy tails and
+asymmetry that $\Phi$ misses.
 
 \paragraph{Magnitude of the correction.}
 At $\sigma_{\text{app}} = 590$\,MPa, $\hat{F} = 585.0$\,MPa:
 $\text{PoF}_{\text{Gaussian}} = 0.603$ vs.\ $\text{PoF}_{\text{empirical}} = 0.663$ --- 6.0\,pp difference. Gaussian is over-confident in the upper tail; at low applied stresses the discrepancy reverses and collapses at large margins.
+This divergence is not a cosmetic calibration issue. Near the fatigue limit, a 6.0
+percentage-point shift in failure probability is large enough to alter engineering
+decisions about acceptable operating stress or the need for a more expensive alloy. At
+lower applied stresses the Gaussian model becomes conservative instead, but the key point
+is the same: the residual shape matters, and the NC branch cannot be safely reduced to a
+single normal $\sigma$.
 
 \begin{figure}[H]
 \centering
@@ -371,6 +420,11 @@ cheapest alloy $\mathbf{x}^*$ that satisfies:
 Latin Hypercube Sampling (LHS) over the bounding box wastes $>$\,99\,\% of samples on metallurgically impossible
 combinations. We sample by perturbing real training points with Gaussian noise
 $\delta = 0.20\,\hat{\sigma}_f$ per feature, clipped to per-feature bounds.
+This choice is practical as much as statistical. The training set already encodes which
+combinations of chemistry and process variables occur in physically plausible steels. By
+sampling in the neighbourhood of known points, the inverse-design loop spends most of its
+budget exploring meaningful local variations instead of generating random combinations
+that are immediately rejected by the hull guard.
 
 \textbf{Composition Union for Cost Modeling.}
 The sampler unions predictive features with all cost-relevant elements \{C, Si, Mn, Ni, Cr, Cu, Mo, P, S, Ct\} to prevent falsely cheap rankings from omitted expensive elements (§\ref{sec:cost}).
@@ -380,6 +434,11 @@ The sampler unions predictive features with all cost-relevant elements \{C, Si, 
 Constraint~\eqref{eq:hull} is enforced by a $k$-NN ($k=5$) filter. We standardise the
 training features, fit kNN, and reject any candidate whose mean 5-NN distance exceeds the
 99\textsuperscript{th} percentile of training-point self-distances.
+The intent is not to guarantee strict physical feasibility in a first-principles sense, but
+to prevent the inverse-design search from wandering into regions where the model is
+performing unconstrained extrapolation. In practice this acts as a simple and auditable
+data-support prior: if a candidate lies much farther from the observed training manifold
+than any real training point lies from its neighbours, we do not trust the recommendation.
 
 \paragraph{Sensitivity.} The threshold matters for the non-carburised regime:
 tightening from p99 to p95 sharply shrinks the feasible set and raises the top-1 cost,
@@ -402,19 +461,25 @@ The recommender returns:
   \item The top-$K$ cheapest feasible alloys.
 \end{enumerate}
 
-\textbf{Algorithm Stability.} Across 8 random seeds the best-cost recipe shifts in composition
-while staying within a narrow cost band: NC \$5.91--\$6.89/kg (std \$0.30/kg), C \$6.88--\$7.05/kg
-(std \$0.05/kg). The carburised regime is near-deterministic; the NC regime is more sensitive
-to sampling noise near the data-hull boundary. We therefore output a \emph{band} of top
-candidates rather than a single brittle point recommendation.
+\textbf{Algorithm Stability.} Across random seeds, the exact recipe can move even when the
+best cost stays in the same band. This is a natural consequence of a flat optimum:
+multiple nearby chemistries can satisfy the same FoS and PoF constraints at nearly the
+same cost. We therefore present the output as a band of viable candidates rather than a
+single brittle prescription.
 
 \subsection{Final Recommendations}
 
 \paragraph{NC} Target: $\sigma_{\text{app}}=500$\,MPa, FoS\,$\geq 1.5$, PoF\,$\leq 2$\,\%.
 Top candidate (\$4.62/kg): $\hat{F}=788.1$\,MPa (FoS 1.58, PoF 0.0\,\%). Strategy: lean-alloy chemistry with Cr 0.17\,wt\%, C 0.55\,wt\%, Mn 0.75\,wt\%, and very low Ni/Mo, paired with THT 848\,°C and TT 489\,°C.
+The important engineering takeaway is that the NC solution does not rely on heavily
+alloyed chemistry. Instead, it exploits a balanced heat-treatment route and moderate
+carbon / manganese levels to achieve the target cheaply while still preserving margin.
 
 \paragraph{C} Target: $\sigma_{\text{app}}=700$\,MPa, FoS\,$\geq 1.4$, PoF\,$\leq 2$\,\%.
 Top candidate (\$18.43/kg): $\hat{F}=1016.4$\,MPa (FoS 1.45, PoF 0.0\,\%). Strategy: 90\,min carburisation with modest Mo (0.13\,wt\%), Mn 0.68\,wt\%, and a chromium-rich supporting chemistry.
+For the carburised branch, the model converges to a more expensive but metallurgically
+familiar recipe: stronger alloying support, sustained carburisation time, and a chemistry
+that resembles the real-world logic of grades such as 4320/8620.
 
 \begin{figure}[H]
   \centering
@@ -437,44 +502,66 @@ Top candidate (\$18.43/kg): $\hat{F}=1016.4$\,MPa (FoS 1.45, PoF 0.0\,\%). Strat
 \section{External Validation}\label{sec:ext}
 % ─────────────────────────────────────────────────────────────────────────────
 
-Three independent validation axes:
+To determine not only whether the model predicts well, but also where it should and
+should not be trusted, we validate it along three independent axes:
 
 \subsection{Stratified NIMS Holdout (In-Distribution)}
-80/20 stratified split by fatigue quintile (\texttt{random\_state=42}), held outside the Optuna tuning loop. Full results in Table~\ref{tab:perf} (§\ref{sec:perf}): NC holdout 17.93\,MPa ($R^2=0.973$), C holdout 25.14\,MPa ($R^2=0.892$), both at or below their respective CV estimates — no overfitting to the fold structure.
-
-\subsection{Cross-Dataset Boundary Probe (\texttt{matbench\_steels})}
-We applied the NC model (composition-only) to \texttt{matbench\_steels} (312 maraging alloys, yield-strength labels). Result: Spearman $\rho=-0.04$ ($p=0.44$) — no rank transfer; Pearson $r=-0.35$ ($p<0.001$). This confirms the applicability boundary: the model safely fails on out-of-distribution Co/Ni/V/W/Ti-rich maraging grades.
-
-\subsection{Canonical Handbook Grades}
-We supplied mid-range handbook compositions~\cite{shigley} for four AISI grades and checked predictions against published rotating-bending fatigue ranges.
-
-\paragraph{Interpretive context: lab specimens vs.\ commercial allowables.}
-Handbook ranges (Shigley's, ASM) are conservative design allowables derived from commercial-grade, mass-produced steel .They embed modifying factors for rough surface finish, larger internal flaws, and manufacturing variability~\cite{shigley}. The NIMS dataset, by contrast, consists of pristine laboratory specimens: precision-machined, fully polished, with meticulously controlled heat-treatment and low non-metallic inclusion ratios. A model trained on NIMS data is therefore expected to predict near the \emph{upper bound} of any handbook range as it accurately reflects the \emph{theoretical peak performance} of a flawless specimen, not a conservative commercial-production mean.
+80/20 stratified split by fatigue quintile (\texttt{random\_state=42}), held outside the
+Optuna tuning loop.
 
 \begin{table}[H]
 \centering
-\caption{Predictions on canonical AISI grades. Handbook ranges from Shigley / ASM. ``Gap to UB'' = prediction $-$ handbook upper bound; negative values lie within range.}
-\label{tab:grades}
-\begin{tabular}{lrcrrrl}
+\caption{Held-out test performance vs.\ 5-fold CV.}
+\label{tab:holdout}
+\begin{tabular}{lrrrr}
 \toprule
-\textbf{Grade} & \textbf{Pred (MPa)} & \textbf{Regime} & \textbf{HB lo} & \textbf{HB hi} & \textbf{Gap to UB} & \textbf{Interpretation} \\
+\textbf{Regime} & \textbf{$N_{\text{train}}$ / $N_{\text{test}}$} & \textbf{Holdout RMSE} & \textbf{$R^2$} & \textbf{CV RMSE} \\
 \midrule
-AISI 8620 carb.      & 923.8 & C  & 700 & 1000 & $-76$  & In range \\
-AISI 4340 QT         & 662.1 & NC & 520 & 660  & $+2$   & Near-exact ($\approx$UB) \\
-AISI 4140 QT         & 654.8 & NC & 450 & 620  & $+35$  & Lab-specimen upper bound \\
-AISI 1045 (norm.)    & 501.9 & NC & 260 & 340  & $+162$ & Plain-C boundary (expected OOD) \\
+NC & 311 / 78 & 17.93\,MPa & 0.973 & 19.19\,MPa \\
+C  & 38 / 10  & 25.14\,MPa & 0.892 & 40.06\,MPa \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Takeaway.} The three alloyed grades tell a consistent and positive story.
-The sole outlier is AISI 1045: its Cr+Ni+Mo $<0.1$\,wt\% places it outside the alloyed-steel training domain, and the $+162$\,MPa over-prediction is the expected signal that 
-the applicability guard is needed, which the deployed GUI enforces.\looseness=-1
+\textbf{Takeaway:} Holdout RMSE is at or below CV estimates, which is exactly what we
+would hope to see from a well-disciplined CV pipeline. There is no sign that the models
+are merely exploiting fold structure or benefiting from accidental leakage.
+
+\subsection{Cross-Dataset Boundary Probe (\texttt{matbench\_steels})}
+We applied the NC model (composition-only) to \texttt{matbench\_steels} (312 maraging alloys, yield-strength labels). Result: Spearman $\rho=-0.04$ ($p=0.44$) — no rank transfer; Pearson $r=-0.35$ ($p<0.001$). This confirms the applicability boundary: the model safely fails on out-of-distribution Co/Ni/V/W/Ti-rich maraging grades.
+This is a useful negative result. The model was never intended to extrapolate into
+maraging or ultra-high-strength chemistries, and the absence of rank transfer confirms that
+it does not spuriously appear accurate outside its training family.
+
+\subsection{Canonical Handbook Grades}
+We supplied mid-range handbook compositions~\cite{shigley} for four AISI grades and checked predictions against published rotating-bending fatigue ranges.
+
+\begin{table}[H]
+\centering
+\caption{Predictions on canonical AISI grades. Handbook ranges from Shigley / ASM.}
+\label{tab:grades}
+\begin{tabular}{lrcrrl}
+\toprule
+\textbf{Grade} & \textbf{Pred (MPa)} & \textbf{Regime} & \textbf{HB lo} & \textbf{HB hi} & \textbf{Status} \\
+\midrule
+AISI 1045 (norm.)    & 501.9 & NC & 260 & 340  & \textbf{HIGH (+162)} \\
+AISI 4140 QT         & 654.8 & NC & 450 & 620  & \textbf{HIGH (+35)}  \\
+AISI 4340 QT         & 662.1 & NC & 520 & 660  & \textbf{HIGH (+2)}   \\
+AISI 8620 carb.      & 923.8 & C  & 700 & 1000 & OK                   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Takeaway:} 1/4 grades fall strictly within handbook ranges. AISI 8620 remains
+in-range, 4340 QT is nearly exact (+2\,MPa), 4140 QT stays slightly high (+35\,MPa), and
+AISI 1045 (Cr\,$<$\,0.1\,wt\%) remains strongly over-predicted (+162\,MPa), confirming the
+plain-carbon boundary. The deployed GUI therefore enforces
+Cr+Ni+Mo\,$\geq$\,0.1\,wt\% rather than pretending to generalise to unalloyed steels.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.88\textwidth]{slides_plots/09_validation.png}
-\caption{Three-leg validation. \emph{Left}: holdout — NC 17.9\,MPa and C 25.1\,MPa, within CV envelope. \emph{Centre}: \texttt{matbench} OOD, $\rho=-0.04$ (expected no transfer). \emph{Right}: AISI handbook — alloyed grades (8620 in range; 4340 near-exact; 4140 at lab-specimen upper bound) confirm correct calibration; 1045 cleanly marks the plain-carbon OOD boundary.}
+\caption{Three-leg validation. \emph{Left}: holdout --- NC 17.9\,MPa and C 25.1\,MPa, both within the CV envelope. \emph{Centre}: \texttt{matbench} OOD, $\rho=-0.04$ (no transfer). \emph{Right}: AISI handbook --- 8620 is in range, 4340 is nearly exact, and 1045 still marks the plain-carbon boundary.}
 \label{fig:validation}
 \end{figure}
 
@@ -482,7 +569,15 @@ the applicability guard is needed, which the deployed GUI enforces.\looseness=-1
 \section{Deployment: Streamlit Application}
 % ─────────────────────────────────────────────────────────────────────────────
 
-\texttt{app.py} wraps the pipeline in two tabs. \textbf{Tab 1 (Forward):} returns predicted fatigue, FoS, PoF, 95\,\% PI, and SHAP waterfall. \textbf{Tab 2 (Inverse):} returns Pareto scatter, ranked alloys, top-$K$ table, and cost card. Models cached via \texttt{@st.cache\_resource}; OOF array computed once at startup ($\approx$2\,s).
+\texttt{app.py} wraps the pipeline in a two-tab Streamlit interface intended for direct
+engineering use. \textbf{Tab 1 (Forward)} accepts the material state plus applied stress
+and returns predicted fatigue strength, FoS, PoF, a 95\,\% prediction interval, and a
+SHAP waterfall that attributes the prediction to input features. \textbf{Tab 2 (Inverse)}
+accepts regime, load target, FoS target, PoF cap, and sample count, then returns Pareto
+scatter, ranked candidate alloys, a top-$K$ table, and a cost card for the rank-1 result.
+Models are cached through \texttt{@st.cache\_resource}; the OOF residual array used for
+empirical NC PoF is computed once at startup (about two seconds) and reused on every
+query.
 
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -494,7 +589,13 @@ Full VC bookkeeping, Hoeffding bounds, and bootstrap CI are in Appendix~B.
 \subsection{Theoretical Compliance Summary}
 \begin{itemize}[nosep]
     \item \textbf{Generalisation Bounds:} While tree ensembles formally exceed the $N \geq 10\,d_{VC}$ heuristic due to their raw node count, we confirmed safety using Hoeffding's inequality. The measured out-of-fold RMSE for both regimes (20.12\,MPa and 42.39\,MPa) sits safely inside the 95\,\% Hoeffding bounds (46.9\,MPa and 69.0\,MPa), guaranteeing the models are not exploiting the training data.
-    \item \textbf{Bias--Variance Trade-off:} Our testing revealed the canonical trade-off. Linear/Ridge models exhibited higher bias (underfitting at roughly 24.5--50.7\,MPa, depending on regime). Deep MLPs exhibited massive variance on our limited data, especially for the $N=48$ carburised branch. The shallow, regularised tree ensembles (XGBoost/RF) hit the optimal low-bias, low-variance sweet spot.
+    \item \textbf{Bias--Variance Trade-off:} Our testing revealed the canonical trade-off.
+          Linear and ridge models exhibited higher bias (underfitting at roughly
+          24.5--50.7\,MPa, depending on regime). Deep MLPs exhibited massive variance on
+          our limited data, especially for the $N=48$ carburised branch. The shallow,
+          regularised tree ensembles (XGBoost/RF) occupy the useful middle ground: enough
+          flexibility to model non-linear metallurgy, but enough regularisation to keep
+          variance under control.
 \end{itemize}
 
 \subsection{Course-Algorithm Benchmark}
@@ -508,8 +609,8 @@ To justify our use of XGBoost and Random Forest, we benchmarked them against the
 \toprule
 \textbf{Algorithm} & \textbf{NC ($N{=}389$)} & \textbf{C ($N{=}48$)} \\
 \midrule
-\textbf{XGBoost (tuned, chosen for NC)}            & \textbf{20.00 ± 2.29} & 50.94 ± 13.35 \\
-\textbf{Random Forest (tuned, chosen for C)}       & 31.82 ± 2.66          & \textbf{40.40 ± 13.82} \\
+\textbf{XGBoost (tuned, chosen for NC)}            & \textbf{19.19 ± 2.52} & 50.94 ± 13.35 \\
+\textbf{Random Forest (tuned, chosen for C)}       & 31.82 ± 2.66          & \textbf{40.06 ± 13.69} \\
 MLP $1\times16{,}16$, Adam                         & 22.44 ± 2.19          & 74.58 ± 16.61 \\
 Random Forest (default 100 trees, depth 4)         & 30.83 ± 1.94          & 43.74 ± 12.14 \\
 OLS (linear regression)                            & 24.61 ± 1.91          & 50.67 ± 17.19 \\
@@ -526,11 +627,15 @@ Ridge ($\alpha=1$) / Lasso ($\alpha=0.5$)          & $\sim$24.6 ± 1.8      & $\
 \begin{itemize}
   \item \textbf{MoE over global model:} Same pooled RMSE, but MoE provides regime-specific $\sigma$ essential for calibrated PoF.
   \item \textbf{RF for C regime:} XGBoost overfit at $N=48$. RF bagging improves the C benchmark from 52.5\,MPa (default XGB) to 40.1\,MPa (tuned RF).
-  \item \textbf{Empirical CDF (NC):} NC OOF residuals fail Gaussian tests ($p<0.001$) due to leptokurtic tails (excess kurtosis $+7.96$, skewness $+0.30$), and at $\hat{F}=585$\,MPa / $\sigma_{\text{app}}=590$\,MPa the Gaussian PoF underestimates risk by 6.0\,pp. Empirical CDF removes that tail error.
+  \item \textbf{Empirical CDF (NC):} NC OOF residuals fail Gaussian tests ($p<0.001$), and at $\hat{F}=585$\,MPa / $\sigma_{\text{app}}=590$\,MPa the Gaussian PoF underestimates risk by 6.0\,pp. Empirical CDF removes that tail error.
   \item \textbf{Neighbourhood sampling:} LHS wastes $>$99\,\% of samples on infeasible chemistry. Perturbing training points gives 96--99\,\% survival rate.
   \item \textbf{p99 hull threshold:} Tightening the NC guard sharply reduces feasible alloys and raises cost, while the carburised regime is less sensitive. p99 is the best practical trade-off.
   \item \textbf{Cost union:} Predictive features $\cup$ priced elements prevents falsely cheap rankings from dropped expensive elements.
 \end{itemize}
+These choices are easy to miss if one looks only at the final RMSE table. In practice,
+however, they are what turn a respectable regressor into an auditable engineering tool:
+they define where uncertainty comes from, where extrapolation is blocked, and how the
+inverse design loop stays economically meaningful.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Limitations and Future Work}
@@ -543,6 +648,11 @@ Ridge ($\alpha=1$) / Lasso ($\alpha=0.5$)          & $\sim$24.6 ± 1.8      & $\
   \item \textbf{Loading modes:} Dataset covers rotating-bending only. Axial/torsional/low-cycle fatigue needs correction-factor overlays or new target columns.
   \item \textbf{Calibration:} Conformal prediction or quantile regression would provide per-prediction coverage guarantees for safety-critical applications.
 \end{itemize}
+None of these limitations invalidate the present system; they instead define the next
+useful frontier. The current tool is strongest as a fast recommender and screening engine
+inside its alloyed low-alloy-steel regime. Extending it to broader chemistries or tighter
+safety guarantees will require either more data or a deliberately more conservative
+uncertainty framework.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
@@ -557,8 +667,12 @@ This report delivers a production-grade, fully-validated fatigue strength predic
   \item \textbf{Safely Bounds} its own logic via a kNN data-hull guard to prevent physical extrapolation, a limit successfully validated against both canonical AISI handbooks and out-of-distribution datasets.
 \end{itemize}
 
-Ultimately, this pipeline compresses the metallurgical screening process from weeks of expensive physical fatigue testing down to sub-second computational inference, providing engineers with directly actionable, cost-optimised recipes for specific loading scenarios.
-% ─────────────────────────────────────────────────────────────────────────────
+Ultimately, this pipeline compresses the metallurgical screening process from weeks of
+expensive physical fatigue testing down to sub-second computational inference, while still
+preserving the most important engineering disciplines: explicit applicability boundaries,
+leakage-free evaluation, and uncertainty-aware reporting.
+
+\clearpage
 \begin{thebibliography}{9}
 \bibitem{agrawal2014}
   A.~Agrawal, P.~D.~Deshpande, A.~Cecen, G.~P.~Basavarsu, A.~N.~Choudhary, S.~K.~Kalidindi,
@@ -579,35 +693,62 @@ Ultimately, this pipeline compresses the metallurgical screening process from we
 \bibitem{shigley}
   R.~G.~Budynas, J.~K.~Nisbett, \textit{Shigley's Mechanical Engineering Design}, 11th ed.,
   McGraw-Hill, 2020. (Handbook fatigue ranges for AISI grades.)
-
-\bibitem{steel4130guide}
-  \textit{The Ultimate Guide to 4130 Steel}, technical reference.
-  Reports normalized fatigue strength $\approx310$\,MPa and Q\&T fatigue strength $\approx450$\,MPa for AISI 4130 chromoly steel.
 \end{thebibliography}
 
-% ─────────────────────────────────────────────────────────────────────────────
 \appendix
 \section{Reproducibility}
 % ─────────────────────────────────────────────────────────────────────────────
 
-\textbf{Full code, data, and extended report (21 pages):}
+\textbf{Full code, data, and refreshed full report:}
 \url{https://github.com/RudraKhandelwal/ME228}
 
 Key files: \texttt{data.csv} (NIMS, 437 samples), \texttt{Project 2.0.py} (training + CV), \texttt{Project 3.0.py} (inverse design), \texttt{app.py} (Streamlit GUI), \texttt{external\_validation.py}, \texttt{models/\{nc\_xgb,c\_rf\}.pkl}, \texttt{models/metadata.json}.
 
+\subsection{Run Order}
 \textbf{Run order:}
 \begin{lstlisting}
 python "Project 2.0.py"        # train + persist models
 python "Project 3.0.py"        # inverse design + Pareto
 python external_validation.py  # holdout + matbench + AISI
+python theory_check.py         # VC / Hoeffding / bootstrap checks
 streamlit run app.py           # interactive GUI
 \end{lstlisting}
+
+\subsection{Training-Fit Residual Diagnostics}
+For completeness, Figure~\ref{fig:trainfit} shows residual histograms and Q-Q plots on
+the training fit, as distinct from the OOF residuals used for calibrated PoF in
+§\ref{sec:reliability}. These residuals are optimistically narrow because they reflect
+in-sample interpolation rather than honest generalisation:
+\[
+  \sigma_{\text{train,NC}} = 5.54\,\text{MPa}
+  \qquad\text{vs.}\qquad
+  \sigma_{\text{OOF,NC}} = 20.12\,\text{MPa}
+\]
+\[
+  \sigma_{\text{train,C}} = 34.29\,\text{MPa}
+  \qquad\text{vs.}\qquad
+  \sigma_{\text{OOF,C}} = 42.39\,\text{MPa}
+\]
+Training-fit residuals are included here only as a consistency check on the full-data fit;
+they should not be used for uncertainty quantification.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.80\textwidth]{models/residual_diagnostics.png}
+\caption{Training-fit residual diagnostics. NC residuals are narrow because XGBoost
+interpolates strongly in-sample; C residuals remain broader but still understate deployment
+uncertainty. Compare with Figure~\ref{fig:oof}, where the OOF distributions widen
+substantially and directly drive the PoF choice.}
+\label{fig:trainfit}
+\end{figure}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Theoretical Foundations and Bounds (ME228)}\label{app:theory}
 % ─────────────────────────────────────────────────────────────────────────────
 
-Formal theory checks referenced in §\ref{sec:theory}.
+This appendix collects the formal statistical-learning checks referenced in
+§\ref{sec:theory}, including VC-dimension bookkeeping, Hoeffding generalisation bounds,
+and bootstrap confidence intervals on OOF RMSE.
 
 \subsection{VC Dimension Bookkeeping}
 
@@ -665,6 +806,13 @@ C  & 48  & 69.0 & 42.39 \textbf{(61\,\% of bound)}  \\
 \end{table}
 
 Both models operate safely inside the bound; the looser VC uniform bound is uninformative at tree-ensemble $d_{VC}$ values.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.55\textwidth]{slides_plots/08_hoeffding.png}
+\caption{Hoeffding 95\,\% bound vs.\ OOF RMSE. Both regimes safely below $\varepsilon$.}
+\label{fig:hoeffding}
+\end{figure}
 
 
 \subsection{Bootstrap Confidence Intervals on RMSE}

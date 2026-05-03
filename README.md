@@ -11,8 +11,8 @@ Streamlit GUI.
 - **Two-branch model.** Carburized (C) and non-carburized (NC) steels are
   modelled separately because their residual distributions and feature
   importances differ.
-  - NC branch: XGBoost — CV RMSE **19.91 ± 2.55 MPa** (n≈340)
-  - C  branch: Random Forest — CV RMSE **40.42 ± 14.62 MPa** (n≈97)
+  - NC branch: XGBoost — CV RMSE **19.19 ± 2.52 MPa** (`top_n=16`, `n=389`)
+  - C  branch: Random Forest — CV RMSE **40.06 ± 13.69 MPa** (`top_n=7`, `n=48`)
 - **Probability-of-failure (PoF) overlay.** Empirical CDF for NC (residuals
   fail normality), Gaussian for C (residuals pass Shapiro + KS).
 - **Inverse design.** kNN-guarded grid search over heat-treatment +
@@ -21,7 +21,7 @@ Streamlit GUI.
   hull-periphery sensitivity, seed-stability of top-K bands.
 - **Interactive GUI.** SHAP explanations, what-if sliders, Pareto front.
 
-See [report_final.pdf](report_final.pdf) for the writeup and
+See [report_concise.pdf](report_concise.pdf) for the writeup and
 [CROSSCHECK.md](CROSSCHECK.md) for the independent verification log.
 
 ## Repo layout
@@ -38,8 +38,9 @@ gen_slide_plots.py      Regenerates figures used in the report and slides
 data.csv                Source dataset (NIMS-style fatigue table)
 models/                 Trained pickles, feature lists, metadata, diagnostics
 slides_plots/           PNGs used in the report and final slide deck
-report_final.{tex,pdf}  Final report
-report.{tex,pdf}        Earlier draft retained for comparison
+report_concise.{tex,pdf}  Final concise report
+report_full.pdf          Full exported report
+report.{tex,pdf}         Earlier draft retained for comparison
 progress_report_1.pdf   Mid-semester progress report
 CROSSCHECK.md           Severity-tagged findings + remediation log
 ```
