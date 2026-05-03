@@ -578,16 +578,18 @@ with the NIMS--commercial difference in specimen quality?''
 \caption{Predictions on canonical AISI grades. Handbook ranges from Shigley / ASM.
 ``Gap to UB'' = prediction $-$ handbook upper bound; negative = within range.}
 \label{tab:grades}
-\begin{tabular}{lrcrrrl}
+{\small\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrcrrrp{3.8cm}}
 \toprule
-\textbf{Grade} & \textbf{Pred (MPa)} & \textbf{Regime} & \textbf{HB lo} & \textbf{HB hi} & \textbf{Gap to UB} & \textbf{Interpretation} \\
+\textbf{Grade} & \textbf{Pred} & \textbf{Rgm} & \textbf{HB lo} & \textbf{HB hi} & \textbf{Gap to UB} & \textbf{Interpretation} \\
+ & \textbf{(MPa)} & & \textbf{(MPa)} & \textbf{(MPa)} & \textbf{(MPa)} & \\
 \midrule
-AISI 8620 carb.      & 923.8 & C  & 700 & 1000 & $-76$  & In range \\
-AISI 4340 QT         & 662.1 & NC & 520 & 660  & $+2$   & Near-exact ($\approx$UB) \\
-AISI 4140 QT         & 654.8 & NC & 450 & 620  & $+35$  & Lab-specimen upper bound \\
-AISI 1045 (norm.)    & 501.9 & NC & 260 & 340  & $+162$ & Plain-C boundary (expected OOD) \\
+AISI 8620 carb.   & 923.8 & C  & 700 & 1000 & $-76$  & In range \\
+AISI 4340 QT      & 662.1 & NC & 520 & 660  & $+2$   & Near-exact ($\approx$UB) \\
+AISI 4140 QT      & 654.8 & NC & 450 & 620  & $+35$  & Lab-specimen upper bound \\
+AISI 1045 (norm.) & 501.9 & NC & 260 & 340  & $+162$ & Plain-C boundary (expected OOD) \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
 
 \textbf{Takeaway.} The three alloyed grades tell a consistent and positive story.
